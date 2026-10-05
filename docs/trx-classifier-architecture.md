@@ -79,13 +79,8 @@ apps/agent-trx-classifier/
         └── trx_classifier/
             ├── __init__.py
             ├── models.py
-            ├── state.py
             ├── criteria.py
-            ├── parallel_choice.py
+            ├── classification.py
             ├── prompts.py
-            ├── nodes.py
-            ├── steps.py
-            ├── factory.py
-            ├── graph.py
             └── workflow.py
 ```
