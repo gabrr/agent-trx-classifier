@@ -1,0 +1,39 @@
+[project]
+name = "agent-trx-classifier"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "docling>=2.130.0",
+  "langchain>=1.2,<2",
+  "langchain-openrouter>=0.1,<1",
+  "openrouter>=0.10,<1",
+  "langgraph>=1.1,<2",
+  "langsmith>=0.7,<1",
+  "typesafe-sdk>=0.7.2",
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.34,<1",
+  "python-multipart>=0.0.20",
+  "python-dotenv>=1,<2",
+]
+
+[project.scripts]
+trx-classify = "cli.main:main"
+trx-api = "api.main:main"
+trx-dataset = "evaluations.evaluation.dataset:main"
+trx-evaluate = "evaluations.evaluation.runner:main"
+
+[dependency-groups]
+dev = ["ruff>=0.12", "langgraph-cli[inmem]>=0.4.31"]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+evaluations = ["dataset/*.json", "dataset/fixtures/*.pdf"]
+
+[tool.uv]
+package = true
