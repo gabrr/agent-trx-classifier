@@ -14,8 +14,10 @@ from .streaming import stream_events
 
 
 def create_app(classifier: DocumentClassifier | None = None) -> FastAPI:
+    # todo: implement a queue system for classification requests.
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+
         app.state.classifier = classifier or await asyncio.to_thread(classifier_factory)
 
         app.state.run_lock = asyncio.Lock()
