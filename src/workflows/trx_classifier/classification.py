@@ -30,7 +30,7 @@ class ClassificationBatch:
     model_calls: int
 
 
-def classify_parallel_choice(
+def classify_transactions(
     model: SingleModel,
     transactions: list[ExtractedTransaction],
 ) -> ClassificationBatch:
