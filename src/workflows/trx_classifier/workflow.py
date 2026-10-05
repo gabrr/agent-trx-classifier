@@ -112,9 +112,6 @@ def build_workflow() -> CompiledStateGraph:
             statement=state["extracted"].statement,
             transactions=batch.transactions,
             metrics=RunMetrics(
-                elapsed_seconds=(
-                    perf_counter() - state["started_at"] if "started_at" in state else 0
-                ),
                 classification_seconds=batch.elapsed_seconds,
                 classification_model_calls=batch.model_calls,
                 transaction_count=len(batch.transactions),
@@ -148,7 +145,7 @@ def build_workflow() -> CompiledStateGraph:
 
     graph.add_node(
         "complete",
-        _with_progress("complete", "Prepare result", complete, "result"),
+        _with_progress("complete", "Prepare result", complete, None),
     )
 
     graph.add_edge(START, "convert")
