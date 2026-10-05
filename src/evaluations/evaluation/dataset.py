@@ -1,6 +1,6 @@
 from langsmith import Client
 
-from runtime.settings import load_environment
+from config import load_environment
 
 from .reference import (
     DATASET_DIRECTORY,

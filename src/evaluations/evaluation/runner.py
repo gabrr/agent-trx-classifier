@@ -3,6 +3,7 @@ import json
 from langsmith import Client
 
 from runtime.factory import classifier_factory
+from tools.statement_file import StatementFileInput
 
 from .dataset import sync_dataset
 from .evaluators import EVALUATORS
@@ -16,7 +17,9 @@ def run_evaluation():
     def target(inputs: dict, attachments: dict) -> dict:
         document = attachments["statement"]["reader"].read()
 
-        result = classifier.classify(document, filename=inputs["fixture"])
+        file = StatementFileInput.from_bytes(document, filename=inputs["fixture"])
+
+        result = classifier.classify(file)
 
         return result.model_dump(mode="json")
 

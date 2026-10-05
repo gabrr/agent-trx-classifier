@@ -1,15 +1,16 @@
 from collections.abc import Callable
 from time import perf_counter
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from langchain.agents.structured_output import ProviderStrategy
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from config import AgentConfig, load_environment
 from runtime.events import json_output
-from runtime.settings import Settings, load_environment
 from tools import file_to_markdown_factory, llm_factory, single_model_factory
+from tools.statement_file import StatementFileInput
 
 from .classification import ClassificationBatch, classify_transactions
 from .models import ExtractedStatement, NormalizedStatement, RunMetrics
@@ -17,10 +18,13 @@ from .prompts import EXTRACTION_PROMPT
 
 
 class ClassifierState(TypedDict, total=False):
+    # Local runs share the file object; tooling supplies file_base64 and filename.
+    file: Any
     file_base64: str
     filename: str
     started_at: float
-    markdown: str
+    document_text: str
+    document_format: str
     extracted: ExtractedStatement
     batch: ClassificationBatch
     result: NormalizedStatement
@@ -30,8 +34,8 @@ def _with_progress(
     step_id: str,
     name: str,
     operation: Callable[[ClassifierState], dict],
-    output_key: str,
-    output_type: str = "json",
+    output_key: str | None,
+    output_type: str | Callable[[ClassifierState], str] = "json",
 ):
     """Wrap a focused node with the shared progress event contract."""
 
@@ -44,18 +48,19 @@ def _with_progress(
 
         update = operation(state)
 
-        writer(
-            {
-                "event": "step_completed",
-                "data": {
-                    "step_id": step_id,
-                    "name": name,
-                    "output_type": output_type,
-                    "output": json_output(update[output_key]),
-                    "elapsed_seconds": perf_counter() - started,
-                },
-            }
-        )
+        data = {
+            "step_id": step_id,
+            "name": name,
+            "elapsed_seconds": perf_counter() - started,
+        }
+
+        if output_key is not None:
+            data["output_type"] = (
+                output_type(state | update) if callable(output_type) else output_type
+            )
+            data["output"] = json_output(update[output_key])
+
+        writer({"event": "step_completed", "data": data})
 
         return update
 
@@ -66,24 +71,31 @@ def build_workflow() -> CompiledStateGraph:
     """Build the classifier for local execution and LangGraph tooling."""
     load_environment()
 
-    settings = Settings()
+    config = AgentConfig()
 
     converter = file_to_markdown_factory("docling")
     extractor = llm_factory(
         "langchain",
-        model=settings.extraction_model,
+        model="openrouter:google/gemini-3.8-flash",
         system_prompt=EXTRACTION_PROMPT,
         response_format=ProviderStrategy(ExtractedStatement),
     )
     classifier = single_model_factory("jev")
 
     def convert(state: ClassifierState) -> dict:
-        markdown = converter.convert(state["file_base64"], filename=state["filename"])
+        file = state.get("file")
 
-        return {"markdown": markdown}
+        if file is None:
+            file = StatementFileInput.from_base64(
+                state["file_base64"], filename=state["filename"], config=config
+            )
+
+        text = file.to_text(pdf_converter=converter)
+
+        return {"document_text": text, "document_format": file.format}
 
     def extract(state: ClassifierState) -> dict:
-        response = extractor.prompt(state["markdown"])
+        response = extractor.prompt(state["document_text"])
 
         extracted = ExtractedStatement.model_validate(response.structured_output)
 
@@ -116,7 +128,11 @@ def build_workflow() -> CompiledStateGraph:
     graph.add_node(
         "convert",
         _with_progress(
-            "convert", "Convert PDF to Markdown", convert, "markdown", "markdown"
+            "convert",
+            "Prepare statement text",
+            convert,
+            "document_text",
+            lambda state: "markdown" if state["document_format"] == "pdf" else "text",
         ),
     )
 

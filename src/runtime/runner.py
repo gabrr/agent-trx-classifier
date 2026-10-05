@@ -1,38 +1,21 @@
-import base64
 from collections.abc import AsyncIterator
 from time import perf_counter
 
 from langgraph.graph.state import CompiledStateGraph
 
+from tools.statement_file import StatementFileInput
 from workflows.trx_classifier.models import NormalizedStatement
 
 from .events import WorkflowEvent
 from .interface import DocumentClassifier
-from .settings import Settings
-
-
-def document_input(document: bytes, filename: str) -> dict:
-    if not document or not document.startswith(b"%PDF-"):
-        raise ValueError("Upload a nonempty PDF document.")
-
-    if not filename.lower().endswith(".pdf"):
-        raise ValueError("The document filename must end in .pdf.")
-
-    if len(document) > Settings().max_upload_bytes:
-        raise ValueError("PDF exceeds the 25 MiB upload limit.")
-
-    return {
-        "file_base64": base64.b64encode(document).decode("ascii"),
-        "filename": filename,
-    }
 
 
 class LangGraphRunner(DocumentClassifier):
     def __init__(self, graph: CompiledStateGraph) -> None:
         self._graph = graph
 
-    def classify(self, document: bytes, *, filename: str) -> NormalizedStatement:
-        inputs = document_input(document, filename)
+    def classify(self, file: StatementFileInput) -> NormalizedStatement:
+        inputs = {"file": file}
 
         started = perf_counter()
 
@@ -45,10 +28,8 @@ class LangGraphRunner(DocumentClassifier):
 
         return result
 
-    async def events(
-        self, document: bytes, *, filename: str
-    ) -> AsyncIterator[WorkflowEvent]:
-        inputs = document_input(document, filename)
+    async def events(self, file: StatementFileInput) -> AsyncIterator[WorkflowEvent]:
+        inputs = {"file": file}
 
         started = perf_counter()
 

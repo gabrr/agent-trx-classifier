@@ -5,19 +5,20 @@ from typing import Annotated
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
+from config import AgentConfig
 from runtime.factory import classifier_factory
 from runtime.interface import DocumentClassifier
-from runtime.runner import document_input
-from runtime.settings import Settings
+from tools.statement_file import StatementFileInput
 
 from .streaming import stream_events
 
 
 def create_app(classifier: DocumentClassifier | None = None) -> FastAPI:
-    # todo: implement a queue system for classification requests.
+    config = AgentConfig()
+
+    # TODO: implement a queue system for classification requests.
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-
         app.state.classifier = classifier or await asyncio.to_thread(classifier_factory)
 
         app.state.run_lock = asyncio.Lock()
@@ -33,14 +34,16 @@ def create_app(classifier: DocumentClassifier | None = None) -> FastAPI:
     @app.post("/classify")
     async def classify(file: Annotated[UploadFile, File()]):
         try:
-            document = await file.read(Settings().max_upload_bytes + 1)
+            document = await file.read(config.max_file_bytes + 1)
         finally:
             await file.close()
 
         filename = file.filename or "statement.pdf"
 
         try:
-            document_input(document, filename)
+            statement_file = StatementFileInput.from_bytes(
+                document, filename=filename, config=config
+            )
 
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
@@ -54,7 +57,7 @@ def create_app(classifier: DocumentClassifier | None = None) -> FastAPI:
 
         async def response_stream():
             try:
-                events = app.state.classifier.events(document, filename=filename)
+                events = app.state.classifier.events(statement_file)
 
                 async for chunk in stream_events(events):
                     yield chunk
