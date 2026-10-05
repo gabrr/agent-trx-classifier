@@ -1,0 +1,5 @@
+{
+  "dependencies": ["."],
+  "graphs": {"trx_classifier": "./src/workflows/trx_classifier/graph.py:graph"},
+  "env": ".env"
+}
