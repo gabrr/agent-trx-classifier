@@ -20,7 +20,7 @@
 
 Status: implemented core classifier. Memory and external research are deferred.
 
-TRX-classifier is a standalone LangGraph workflow that receives a full document, converts it to Markdown, extracts transactions with an LLM, and classifies each one through Jev. It follows the tools/workflows architecture from Evaluation Lab.
+TRX-classifier is a standalone LangGraph workflow that receives a PDF or CSV, prepares Markdown or CSV text, extracts transactions with an LLM, and classifies each one through Jev. It follows the tools/workflows architecture from Evaluation Lab.
 
 ## Project structure
 
@@ -42,13 +42,13 @@ apps/agent-trx-classifier/
 │   ├── trx-classifier-context-addon.md
 │   └── trx-correction-memory.md
 └── src/
+    ├── config.py
     ├── api/
     ├── cli/
     ├── runtime/
     │   ├── events.py
     │   ├── interface.py
     │   ├── factory.py
-    │   ├── settings.py
     │   └── runner.py
     ├── evaluations/
     │   ├── dataset/
@@ -58,6 +58,9 @@ apps/agent-trx-classifier/
     │   └── evaluation/
     ├── tools/
     │   ├── __init__.py
+    │   ├── statement_file/
+    │   │   ├── __init__.py
+    │   │   └── input.py
     │   ├── file_to_markdown/
     │   │   ├── __init__.py
     │   │   ├── interface.py
@@ -84,3 +87,21 @@ apps/agent-trx-classifier/
             ├── prompts.py
             └── workflow.py
 ```
+
+## File preparation
+
+`config.py` owns accepted formats, the upload size limit, CSV encoding, and
+once-per-process environment initialization. The extraction model stays in
+`build_workflow()` and prompts stay in code.
+
+API, CLI, and evaluation construct `StatementFileInput` once. The immutable file
+retains bytes and caches successful Base64 encoding and text preparation. The
+`convert` stage calls `to_text()`: PDFs use the existing Docling tool; CSVs are
+decoded directly and bypass Docling. Both feed `document_text` into extraction.
+The existing conversion, LLM, and Jev tools remain unchanged.
+
+LangGraph tooling can still supply `file_base64` and `filename`; the conversion
+stage adapts this JSON input without re-encoding it. File objects and their locks
+are for local execution, not serialized checkpoint storage. Whole-run duration
+is assigned by the runtime runner; direct graph execution retains the default
+zero for that metric. Individual graph steps still report their own duration.

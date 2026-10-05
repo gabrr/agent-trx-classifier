@@ -1,6 +1,6 @@
 # TRX Classifier
 
-Extracts transactions from PDF statements and classifies them into `fixed`,
+Extracts transactions from PDF and CSV statements and classifies them into `fixed`,
 `movements`, `installments`, and `variable`.
 
 ## Quick start
@@ -33,6 +33,7 @@ Run commands below from `apps/agent-trx-classifier`.
 ```sh
 uv run trx-classify /path/to/statement.pdf
 uv run trx-classify /path/to/statement.pdf --stream
+uv run trx-classify /path/to/statement.csv
 ```
 
 Standard mode prints the final result; `--stream` emits progress and the final
@@ -46,7 +47,7 @@ uv run trx-api
 ```
 
 The API uses `http://127.0.0.1:8000`; `GET /health` checks readiness and
-`POST /classify` accepts a PDF in multipart field `file`, returning SSE events.
+`POST /classify` accepts a PDF or CSV in multipart field `file`, returning SSE events.
 [Acetate Web 0.1](../acetate-web-0.1/README.md) runs on port 3101 and proxies
 uploads to this API.
 

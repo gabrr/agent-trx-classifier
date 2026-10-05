@@ -5,8 +5,8 @@ For first-time setup, start with the [README](../README.md#quick-start).
 
 ## Credentials
 
-The classifier loads this app's `.env`; existing process environment variables
-take precedence.
+The classifier loads this app's `.env` once per process; existing process
+environment variables take precedence. Restart the process after changing `.env`.
 
 | Variable | Used for |
 | --- | --- |
@@ -27,8 +27,13 @@ commands, even if tracing is disabled.
 uv run trx-classify src/evaluations/dataset/fixtures/fixture-01.pdf
 ```
 
-Accepts a nonempty PDF with a `.pdf` filename, up to 25 MiB. Processes the file
-through the same workflow as the API, without calling the API server.
+Accepts a nonempty PDF (`.pdf`) or UTF-8 CSV (`.csv`), up to 25 MiB. UTF-8
+byte-order marks are supported. PDF uses Docling; CSV goes directly to LLM
+extraction as text. Both use the same downstream workflow as the API.
+
+```sh
+uv run trx-classify /path/to/statement.csv
+```
 
 Standard output contains the final result:
 
@@ -46,11 +51,11 @@ uv run trx-classify src/evaluations/dataset/fixtures/fixture-01.pdf --stream
 ```
 
 Each line contains an event with `event` and `data` fields. Step events report
-progress and completed step outputs; the `result` event contains the complete
-result. Event details are in the [contract](trx-classifier-contract.md#models-and-execution).
+progress and completed step outputs; the `complete` step reports timing only.
+The `result` event contains the complete result once. Event details are in the [contract](trx-classifier-contract.md#models-and-execution).
 
 CLI failures are printed to stderr as `ExceptionType: message`, including in
-streaming mode. Invalid PDFs, provider failures, or output validation errors
+streaming mode. Invalid files, provider failures, or output validation errors
 stop processing. Low confidence or an empty transaction list can still be a
 valid result.
 
@@ -62,7 +67,7 @@ uv run trx-api
 
 Binds to `127.0.0.1:8000`. `GET /health` reports readiness; `POST /classify` accepts
 multipart field `file` and streams SSE events. Only one classification runs at a
-time: overlapping requests receive HTTP 409. Invalid PDFs receive HTTP 422;
+time: overlapping requests receive HTTP 409. Invalid PDF/CSV files receive HTTP 422;
 failures after streaming starts are sent as `error` events.
 
 For the browser client and its proxy configuration, see
@@ -127,7 +132,7 @@ Project readability conventions are in [AGENTS.md](../AGENTS.md).
 | --- | --- |
 | Missing credentials or provider authentication failure | App `.env` and process environment overrides; see the credential table above. |
 | Slow first conversion | Docling downloads models on first use. |
-| PDF rejected | Nonempty PDF content, `.pdf` filename, and the 25 MiB limit. |
+| File rejected | Nonempty content, PDF/CSV extension, valid PDF signature or UTF-8 CSV text, and the 25 MiB limit. |
 | API cannot bind port 8000 | Another service, such as the backend API, may already use that port. |
 | Web upload cannot reach the classifier | API availability and the web app's `CLASSIFIER_API_URL`; see its README. |
 | Dataset/evaluation authentication failure | LangSmith key and endpoint, even if tracing is disabled. |
