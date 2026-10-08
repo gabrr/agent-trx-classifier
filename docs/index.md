@@ -2,6 +2,9 @@
 
 | Document | Contents |
 | --- | --- |
+| [Database and Docker](database-and-docker/README.md) | Complete table definitions, implementation handoff, local Docker setup, and simple database checks. |
+| [Deployment](deployment/README.md) | CLI-first setup plan and guides for the six cloud services. |
+| [Authentication](deployment/authentication.md) | Proposed login, browser sessions, service identity, and interactive walkthrough. |
 | [Usage](trx-classifier-usage.md) | Credentials, CLI/API behavior, datasets, evaluation, and troubleshooting. |
 | [Architecture](trx-classifier-architecture.md) | Tech stack and project structure. |
 | [Contract](trx-classifier-contract.md) | Models, categories, errors, and evaluation metrics. |
