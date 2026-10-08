@@ -2,15 +2,16 @@ import json
 
 from langsmith import Client
 
-from runtime.factory import classifier_factory
 from tools.statement_file import StatementFileInput
+from workflows.trx_classifier.models import NormalizedStatement
+from workflows.trx_classifier.workflow import build_workflow
 
 from .dataset import sync_dataset
 from .evaluators import EVALUATORS
 
 
 def run_evaluation():
-    classifier = classifier_factory()
+    workflow = build_workflow()
 
     dataset_name = sync_dataset()
 
@@ -19,7 +20,9 @@ def run_evaluation():
 
         file = StatementFileInput.from_bytes(document, filename=inputs["fixture"])
 
-        result = classifier.classify(file)
+        state = workflow.invoke({"file": file}, config={"run_name": "trx_classifier"})
+
+        result = NormalizedStatement.model_validate(state["result"])
 
         return result.model_dump(mode="json")
 

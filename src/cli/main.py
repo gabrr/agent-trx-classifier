@@ -3,12 +3,21 @@ import asyncio
 import sys
 from pathlib import Path
 
-from runtime.factory import classifier_factory
+from tools.event_stream import workflow_events
 from tools.statement_file import StatementFileInput
+from workflows.trx_classifier.models import NormalizedStatement
+from workflows.trx_classifier.workflow import build_workflow
 
 
-async def print_events(classifier, file: StatementFileInput) -> None:
-    async for event in classifier.events(file):
+async def print_events(workflow, file: StatementFileInput) -> None:
+    parts = workflow.astream(
+        {"file": file},
+        config={"run_name": "trx_classifier"},
+        stream_mode=["custom", "updates"],
+        version="v2",
+    )
+
+    async for event in workflow_events(parts):
         print(event.model_dump_json(), flush=True)
 
 
@@ -28,13 +37,17 @@ def main() -> None:
 
         file = StatementFileInput.from_bytes(document, filename=args.file.name)
 
-        classifier = classifier_factory()
+        workflow = build_workflow()
 
         if args.stream:
-            asyncio.run(print_events(classifier, file))
+            asyncio.run(print_events(workflow, file))
 
         else:
-            result = classifier.classify(file)
+            state = workflow.invoke(
+                {"file": file}, config={"run_name": "trx_classifier"}
+            )
+
+            result = NormalizedStatement.model_validate(state["result"])
 
             print(result.model_dump_json(indent=2))
 

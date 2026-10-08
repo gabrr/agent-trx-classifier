@@ -41,7 +41,7 @@ Standard output contains the final result:
 | --- | --- |
 | `statement` | Statement metadata, such as institution, currency, dates, and total. |
 | `transactions` | Extracted rows with category, confidence, and category probabilities. |
-| `metrics` | Workflow and classification durations, classification model calls, and transaction count. |
+| `metrics` | Summed processing duration (`elapsed_seconds`: conversion + extraction + classification), classification duration, classification model calls, and transaction count. Graph overhead and final-result preparation are excluded. |
 
 See the [contract](trx-classifier-contract.md#models-and-execution) for category
 mapping and output conventions.

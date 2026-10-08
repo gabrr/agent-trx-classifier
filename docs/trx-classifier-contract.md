@@ -18,6 +18,6 @@
 - Fail on processing/provider/validation errors. No silent fallback or automatic retries. The API emits `error` if streaming has begun; the CLI fails with a nonzero exit.
 - An empty transaction list or low confidence is a valid outcome, not a processing error.
 - Use LangSmith dataset `trx-classifier`, with the supplied PDF attached and the adapted reference labels; expected transaction count is 99.
-- Measure classification accuracy, total workflow duration, exact transaction count, and monetary correctness.
+- Measure classification accuracy, summed processing duration, exact transaction count, and monetary correctness. `metrics.elapsed_seconds` sums conversion, extraction, and classification durations; it excludes graph overhead and the `complete` step.
 - Compare statement total and the sum of signed transaction amounts separately against their dataset references, using decimal arithmetic. Do not assume the invoice total equals the transaction sum.
 - Reuse source transaction matching and amount evaluators; include end-to-end classification accuracy so missing rows cannot inflate accuracy.

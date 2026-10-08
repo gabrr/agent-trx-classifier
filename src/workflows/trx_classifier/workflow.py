@@ -1,15 +1,12 @@
-from collections.abc import Callable
-from time import perf_counter
 from typing import Any, TypedDict
 
 from langchain.agents.structured_output import ProviderStrategy
-from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from config import AgentConfig, load_environment
-from runtime.events import json_output
 from tools import file_to_markdown_factory, llm_factory, single_model_factory
+from tools.event_stream import event_stream
 from tools.statement_file import StatementFileInput
 
 from .classification import ClassificationBatch, classify_transactions
@@ -22,49 +19,12 @@ class ClassifierState(TypedDict, total=False):
     file: Any
     file_base64: str
     filename: str
-    started_at: float
+    step_durations: dict[str, float]
     document_text: str
     document_format: str
     extracted: ExtractedStatement
     batch: ClassificationBatch
     result: NormalizedStatement
-
-
-def _with_progress(
-    step_id: str,
-    name: str,
-    operation: Callable[[ClassifierState], dict],
-    output_key: str | None,
-    output_type: str | Callable[[ClassifierState], str] = "json",
-):
-    """Wrap a focused node with the shared progress event contract."""
-
-    def execute(state: ClassifierState) -> dict:
-        writer = get_stream_writer()
-
-        writer({"event": "step_started", "data": {"step_id": step_id, "name": name}})
-
-        started = perf_counter()
-
-        update = operation(state)
-
-        data = {
-            "step_id": step_id,
-            "name": name,
-            "elapsed_seconds": perf_counter() - started,
-        }
-
-        if output_key is not None:
-            data["output_type"] = (
-                output_type(state | update) if callable(output_type) else output_type
-            )
-            data["output"] = json_output(update[output_key])
-
-        writer({"event": "step_completed", "data": data})
-
-        return update
-
-    return execute
 
 
 def build_workflow() -> CompiledStateGraph:
@@ -112,6 +72,7 @@ def build_workflow() -> CompiledStateGraph:
             statement=state["extracted"].statement,
             transactions=batch.transactions,
             metrics=RunMetrics(
+                elapsed_seconds=sum(state.get("step_durations", {}).values()),
                 classification_seconds=batch.elapsed_seconds,
                 classification_model_calls=batch.model_calls,
                 transaction_count=len(batch.transactions),
@@ -120,32 +81,53 @@ def build_workflow() -> CompiledStateGraph:
 
         return {"result": result}
 
+    def conversion_output_type(state: ClassifierState) -> str:
+        if state["document_format"] == "pdf":
+            return "markdown"
+
+        return "text"
+
     graph = StateGraph(ClassifierState)
 
     graph.add_node(
         "convert",
-        _with_progress(
-            "convert",
-            "Prepare statement text",
+        event_stream(
             convert,
-            "document_text",
-            lambda state: "markdown" if state["document_format"] == "pdf" else "text",
+            step_id="convert",
+            name="Prepare statement text",
+            output_key="document_text",
+            output_type=conversion_output_type,
         ),
     )
 
     graph.add_node(
         "extract",
-        _with_progress("extract", "Extract transactions", extract, "extracted"),
+        event_stream(
+            extract,
+            step_id="extract",
+            name="Extract transactions",
+            output_key="extracted",
+        ),
     )
 
     graph.add_node(
         "classify",
-        _with_progress("classify", "Classify transactions", classify, "batch"),
+        event_stream(
+            classify,
+            step_id="classify",
+            name="Classify transactions",
+            output_key="batch",
+        ),
     )
 
     graph.add_node(
         "complete",
-        _with_progress("complete", "Prepare result", complete, None),
+        event_stream(
+            complete,
+            step_id="complete",
+            name="Prepare result",
+            record_duration=False,
+        ),
     )
 
     graph.add_edge(START, "convert")

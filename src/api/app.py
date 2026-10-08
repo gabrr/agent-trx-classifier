@@ -4,15 +4,16 @@ from typing import Annotated
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from langgraph.graph.state import CompiledStateGraph
 
 from config import AgentConfig, database_config
-from runtime.interface import DocumentClassifier
+from tools.event_stream import workflow_events
 from tools.statement_file import StatementFileInput
 
 from .streaming import stream_events
 
 
-def create_app(classifier: DocumentClassifier | None = None) -> FastAPI:
+def create_app(workflow: CompiledStateGraph | None = None) -> FastAPI:
     config = AgentConfig()
 
     # TODO: implement a queue system for classification requests.
@@ -24,7 +25,7 @@ def create_app(classifier: DocumentClassifier | None = None) -> FastAPI:
 
         settings = database_config()
 
-        app.state.classifier = classifier
+        app.state.workflow = workflow
         app.state.run_lock = asyncio.Lock()
 
         app.state.db_engine = None
@@ -103,12 +104,19 @@ def create_app(classifier: DocumentClassifier | None = None) -> FastAPI:
 
         async def response_stream():
             try:
-                if app.state.classifier is None:
-                    from runtime.factory import classifier_factory
+                if app.state.workflow is None:
+                    from workflows.trx_classifier.workflow import build_workflow
 
-                    app.state.classifier = await asyncio.to_thread(classifier_factory)
+                    app.state.workflow = await asyncio.to_thread(build_workflow)
 
-                events = app.state.classifier.events(statement_file)
+                parts = app.state.workflow.astream(
+                    {"file": statement_file},
+                    config={"run_name": "trx_classifier"},
+                    stream_mode=["custom", "updates"],
+                    version="v2",
+                )
+
+                events = workflow_events(parts)
 
                 async for chunk in stream_events(events):
                     yield chunk

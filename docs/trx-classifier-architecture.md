@@ -45,11 +45,6 @@ apps/agent-trx-classifier/
     ├── config.py
     ├── api/
     ├── cli/
-    ├── runtime/
-    │   ├── events.py
-    │   ├── interface.py
-    │   ├── factory.py
-    │   └── runner.py
     ├── evaluations/
     │   ├── dataset/
     │   │   ├── dataset.json
@@ -58,6 +53,7 @@ apps/agent-trx-classifier/
     │   └── evaluation/
     ├── tools/
     │   ├── __init__.py
+    │   ├── event_stream.py
     │   ├── statement_file/
     │   │   ├── __init__.py
     │   │   └── input.py
@@ -102,6 +98,18 @@ The existing conversion, LLM, and Jev tools remain unchanged.
 
 LangGraph tooling can still supply `file_base64` and `filename`; the conversion
 stage adapts this JSON input without re-encoding it. File objects and their locks
-are for local execution, not serialized checkpoint storage. Whole-run duration
-is assigned by the runtime runner; direct graph execution retains the default
-zero for that metric. Individual graph steps still report their own duration.
+are for local execution, not serialized checkpoint storage.
+
+API, CLI, and evaluations execute the compiled graph directly. The reusable
+`tools/event_stream.py` function wraps node operations and emits the existing
+progress events. `workflow_events()` formats an already-running graph stream,
+validates progress events, emits one final result, and detects missing results;
+it does not build or execute graphs.
+
+Each processing node stores its duration in `step_durations`. The final `complete`
+node sums conversion, extraction, and classification durations into
+`metrics.elapsed_seconds`, including for direct graph execution. This is processing
+time, excluding graph scheduling, event serialization, and final-result formatting.
+The `complete` step still emits its own duration but is excluded from the sum.
+Duration accumulation assumes the current sequential graph; parallel branches
+would require a state reducer.

@@ -382,7 +382,7 @@ agent-trx-classifier/
   src/
     config.py
     api/                         existing FastAPI code; add health/readiness
-    runtime/                     preserve existing interfaces
+    tools/event_stream.py        progress events; entry points execute graphs directly
     workflows/trx_classifier/    preserve existing TRX models
     tools/                       preserve provider adapters
     db/
