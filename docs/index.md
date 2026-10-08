@@ -2,6 +2,7 @@
 
 | Document | Contents |
 | --- | --- |
+| [System design](trx-system-design/README.md) | Visual guides to architecture, events, security, capacity, and cost. |
 | [Database and Docker](database-and-docker/README.md) | Complete table definitions, implementation handoff, local Docker setup, and simple database checks. |
 | [Deployment](deployment/README.md) | CLI-first setup plan and guides for the six cloud services. |
 | [Authentication](deployment/authentication.md) | Proposed login, browser sessions, service identity, and interactive walkthrough. |

@@ -14,6 +14,11 @@ dependencies = [
   "uvicorn>=0.34,<1",
   "python-multipart>=0.0.20",
   "python-dotenv>=1,<2",
+  "sqlalchemy>=2.0,<3",
+  "psycopg[binary]>=3.2,<4",
+  "alembic>=1.14,<2",
+  "torch>=2.11,<3",
+  "torchvision>=0.26,<1",
 ]
 
 [project.scripts]
@@ -23,7 +28,12 @@ trx-dataset = "evaluations.evaluation.dataset:main"
 trx-evaluate = "evaluations.evaluation.runner:main"
 
 [dependency-groups]
-dev = ["ruff>=0.12", "langgraph-cli[inmem]>=0.4.31"]
+dev = [
+    "ruff>=0.12",
+    "langgraph-cli[inmem]>=0.4.31",
+    "pytest>=8,<10",
+    "httpx>=0.28,<1",
+]
 
 [build-system]
 requires = ["setuptools>=77"]
@@ -40,3 +50,12 @@ evaluations = ["dataset/*.json", "dataset/fixtures/*.pdf"]
 
 [tool.uv]
 package = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]

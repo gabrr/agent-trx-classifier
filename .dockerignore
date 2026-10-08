@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+.venv
+.git
+.codex
+.agents
+__pycache__
+*.pyc
+.ruff_cache
+.pytest_cache
+.runs
+.DS_Store
+docs
+docker
+src/evaluations/dataset/fixtures
+*.pdf

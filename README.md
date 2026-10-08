@@ -77,3 +77,8 @@ and [code checks](docs/trx-classifier-usage.md#code-checks).
 
 Commit messages: `type: comment`, using `feat`, `fix`, `chore`, `doc`, or
 `refactor`. Example: `doc: made readme.md clearer`.
+
+## Database and Docker
+
+See [local setup, migrations, and smoke tests](docs/database-and-docker/README.md).
+Production schema migration and deployment remain separate follow-up actions.

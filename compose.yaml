@@ -1,0 +1,65 @@
+name: trx-classifier
+services:
+  db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${TRX_LOCAL_ADMIN_PASSWORD:-local-admin-only}
+      TRX_APP_PASSWORD: ${TRX_LOCAL_APP_PASSWORD:-local-app-only}
+    ports:
+      - "127.0.0.1:${TRX_DB_PORT:-5433}:5432"
+    volumes:
+      - trx_dev_data:/var/lib/postgresql/data
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/10-trx.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d trx_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  app:
+    image: trx-classifier:local
+    build:
+      context: .
+      target: runtime
+    environment: &app-environment
+      DATABASE_URL: postgresql+psycopg://trx_app:${TRX_LOCAL_APP_PASSWORD:-local-app-only}@db:5432/trx_dev
+      DATABASE_LISTENER_URL: postgresql://trx_app:${TRX_LOCAL_APP_PASSWORD:-local-app-only}@db:5432/trx_dev
+      PORT: 8080
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+    ports:
+      - "127.0.0.1:${TRX_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+  migrate:
+    image: trx-classifier:local
+    build:
+      context: .
+      target: runtime
+    profiles: [tools]
+    environment:
+      DATABASE_ADMIN_URL: postgresql+psycopg://postgres:${TRX_LOCAL_ADMIN_PASSWORD:-local-admin-only}@db:5432/trx_dev
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+  test:
+    build:
+      context: .
+      target: test
+    profiles: [tools]
+    environment:
+      DATABASE_URL: postgresql+psycopg://trx_app:${TRX_LOCAL_APP_PASSWORD:-local-app-only}@db:5432/trx_test
+      DATABASE_ADMIN_URL: postgresql+psycopg://postgres:${TRX_LOCAL_ADMIN_PASSWORD:-local-admin-only}@db:5432/trx_test
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["sh", "-c", "alembic upgrade head && python -m pytest tests/db/test_smoke.py -q"]
+volumes:
+  trx_dev_data:
