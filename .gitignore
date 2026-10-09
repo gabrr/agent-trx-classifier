@@ -7,3 +7,4 @@ __pycache__/
 .langgraph_api/
 *.egg-info/
 .runs/
+supabase/.temp/

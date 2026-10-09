@@ -1,15 +1,30 @@
-# TRX-classifier documentation
+# Classifier documentation
 
-| Document | Contents |
+Start with [system design](trx-system-design/README.md) to understand the backend, [usage](trx-classifier-usage.md) to run the classifier, or [deployment](deployment/README.md) to configure managed services.
+
+| Guide | Purpose |
 | --- | --- |
-| [System design](trx-system-design/README.md) | Visual guides to architecture, events, security, capacity, and cost. |
-| [Database and Docker](database-and-docker/README.md) | Complete table definitions, implementation handoff, local Docker setup, and simple database checks. |
-| [Deployment](deployment/README.md) | CLI-first setup plan and guides for the six cloud services. |
-| [Authentication](deployment/authentication.md) | Proposed login, browser sessions, service identity, and interactive walkthrough. |
-| [Usage](trx-classifier-usage.md) | Credentials, CLI/API behavior, datasets, evaluation, and troubleshooting. |
-| [Architecture](trx-classifier-architecture.md) | Tech stack and project structure. |
-| [Contract](trx-classifier-contract.md) | Models, categories, errors, and evaluation metrics. |
-| [Frontend plan](trx-classifier-frontend-plan.md) | Visual test client, streaming API integration, and fixtures. |
-| [Context add-on](trx-classifier-context-addon.md) | Deferred: user memory and external enrichment. |
-| [TRX Correction Memory](trx-correction-memory.md) | Deferred: save/enrich flows, pgvector provider, contract and future classification dimensions. |
-| [Agent instructions](../AGENTS.md) | Python readability and formatting rules. |
+| [System design](trx-system-design/README.md) | Visual explanations of jobs, events, identity and capacity. |
+| [Classifier architecture](trx-classifier-architecture.md) | Workflow stages and code responsibilities. |
+| [Contract](trx-classifier-contract.md) | Inputs, results, API routes, errors and evaluation rules. |
+| [Usage](trx-classifier-usage.md) | CLI/API entry points, credentials, dataset and evaluation commands. |
+| [Database and Docker](database-and-docker/README.md) | Local setup, migrations, tests and persistence guarantees. |
+| [Authentication and job integration](authentication-and-jobs.md) | Provider abstractions, services and their composition. |
+| [Deployment](deployment/README.md) | Cloud setup, verification and recovery procedures. |
+| [Agent instructions](../AGENTS.md) | Code style and documentation maintenance. |
+
+## Proposals
+
+These documents describe extensions, not current capabilities:
+
+- [Authentication provider switching review](authentication-and-jobs.md#planned-authentication-review)
+- [Context enrichment](trx-classifier-context-addon.md)
+- [TRX Correction Memory](trx-correction-memory.md)
+
+## Historical records
+
+- [Database implementation handoff](database-and-docker/HANDOFF.md)
+- [Database verification report](database-and-docker/IMPLEMENTATION.md)
+- [Disposable frontend plan](trx-classifier-frontend-plan.md)
+
+Use the current guides above for operating commands and system behavior.

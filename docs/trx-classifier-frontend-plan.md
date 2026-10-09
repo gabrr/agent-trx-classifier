@@ -1,5 +1,7 @@
 # TRX-classifier frontend plan
 
+> Historical plan for the disposable Acetate Web 0.1 test client. Its direct `/classify` integration does not match the current authenticated job API. Use the [API contract](trx-classifier-contract.md#http-api) for new integration. The interface notes below remain a design reference.
+
 Build a disposable visual test client based on the second design concept. Keep it separate from the agent in `apps/acetate-web-0.1/`.
 
 ## Stack and structure

@@ -1,3 +1,7 @@
+# Proposed context enrichment
+
+This proposal adds user correction memory and external research to classification. Neither is a stage in the current workflow. The 70% threshold and reassessment flows below are design examples requiring evaluation. See [correction memory](trx-correction-memory.md) for its proposed contract.
+
 ```mermaid
 ---
 title: Version 1 — User correction memory only

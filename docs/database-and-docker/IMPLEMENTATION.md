@@ -1,5 +1,7 @@
 # Implementation report — October 8, 2026
 
+> Historical verification report for the database/Docker stage on October 8, 2026. Its remaining-work list describes that stage, not current capabilities. Use [Database and Docker](README.md) and [job integration](../authentication-and-jobs.md) for current guidance.
+
 The agreed local database/Docker scope is implemented in `apps/agent-trx-classifier`.
 Production schemas were not changed. No images were pushed, and no cloud services
 were deployed. Existing TRX workflow models, `classify()`, `events()`, nullable

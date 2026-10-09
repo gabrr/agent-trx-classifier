@@ -1,5 +1,7 @@
 # Database and Docker implementation handoff
 
+> Historical implementation plan. Its proposed commands, limits and future-work descriptions are not the current system contract. Use [Database and Docker](README.md) for setup and [system design](../trx-system-design/README.md) for current behavior.
+
 Status: agreed implementation plan, not completed implementation. This document
 contains the table definitions so the implementation agent does not need to
 redesign them. Do not create another production database.
@@ -40,12 +42,7 @@ Leave Supabase-managed schemas untouched. Application tables belong in `private`
 excluded from Supabase's exposed Data API schemas. PDFs use private Google Cloud
 Storage, not Supabase Storage.
 
-Standardize runtime configuration on `DATABASE_URL`, `DATABASE_ADMIN_URL`, and
-`DATABASE_LISTENER_URL`. The current local `.env` has `DB_URL` and `DB_PASSWORD`;
-support these safely during transition. Resolve the password explicitly rather
-than assuming Docker expands `${...}` in environment files. Never print secrets.
-Document local examples without real credentials. The administrative URL is for
-migration commands only, not the running application.
+Current database configuration is documented in [Database and Docker](README.md#configuration-and-supabase-boundary). The application, listener and migrations use one `DATABASE_URL` with its password included.
 
 ## Complete table definitions
 

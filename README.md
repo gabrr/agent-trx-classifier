@@ -13,7 +13,9 @@ uv sync
 ```
 
 Create `.env` from [`.env.example`](.env.example) if it does not exist, then set
-`OPENROUTER_API_KEY`, `TYPESAFE_API_KEY`, and `LANGSMITH_API_KEY`. See
+`OPENROUTER_API_KEY` and `TYPESAFE_API_KEY`. Keep production values in `.env.prod`;
+[credential details](docs/trx-classifier-usage.md#credentials) explains how to load it.
+Set `LANGSMITH_API_KEY` for tracing or evaluation. See
 [credential details](docs/trx-classifier-usage.md#credentials) for tracing options.
 
 Classify the included sample PDF:
@@ -46,10 +48,9 @@ input limits, events, and errors.
 uv run trx-api
 ```
 
-The API uses `http://127.0.0.1:8000`; `GET /health` checks readiness and
-`POST /classify` accepts a PDF or CSV in multipart field `file`, returning SSE events.
-[Acetate Web 0.1](../acetate-web-0.1/README.md) runs on port 3101 and proxies
-uploads to this API.
+The API defaults to `http://127.0.0.1:8080`. `GET /health` checks liveness; `GET /ready` checks the database. Supabase manages user sign-in; the backend verifies incoming Bearer tokens; authenticated `/api/jobs` submissions return 202 and process through Cloud Tasks. Default `/classify` returns 410 after token verification so processing cannot bypass the queue. Direct CLI classification remains available.
+
+See [system design](docs/trx-system-design/README.md) for visual job and event flows and [deployment](docs/deployment/README.md) for provider setup. Acetate Web 0.1 uses the older direct classification interface and needs integration with this authenticated job API.
 
 ## Other commands
 
@@ -81,4 +82,4 @@ Commit messages: `type: comment`, using `feat`, `fix`, `chore`, `doc`, or
 ## Database and Docker
 
 See [local setup, migrations, and smoke tests](docs/database-and-docker/README.md).
-Production schema migration and deployment remain separate follow-up actions.
+For hosted services, follow the [deployment guide](docs/deployment/README.md).

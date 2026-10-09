@@ -1,4 +1,6 @@
-# TRX Correction Memory
+# Proposed TRX Correction Memory
+
+This is a proposed user-scoped correction store and retrieval tool. It is not implemented by the current transaction-edit/activity repositories. The diagrams and code sketch describe the proposed extension.
 
 ```mermaid
 flowchart LR
@@ -24,7 +26,7 @@ flowchart LR
 
 ## Summary
 
-- Deferred add-on; documentation only. First provider: PostgreSQL + pgvector.
+- Proposed first provider: PostgreSQL + pgvector.
 - Two operations: save a user correction; enrich a transaction batch.
 - Preserve every input transaction, its fields, and order. No match means empty context.
 - Corrections are evidence for classification, not model training or automatic rules.
@@ -103,4 +105,4 @@ src/tools/
     └── indexing.py
 ```
 
-Provider folders live directly under `tools/`; no `providers/` folder.
+Align the final provider layout with the existing interface/factory/adapter packages under `tools/` when implementing this proposal.
