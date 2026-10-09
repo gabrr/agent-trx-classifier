@@ -445,3 +445,26 @@ def test_verification_key_network_failure_is_unavailable(signed_provider):
 
     with pytest.raises(AuthenticationUnavailable):
         provider.authenticate_token(sign(key, claims))
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"full_name": "User"},
+        {},
+        None,
+        {"full_name": None},
+        {"full_name": {"first": "User"}},
+        {"full_name": ["User"]},
+        {"full_name": 42},
+        "invalid metadata",
+    ],
+)
+def test_signed_profile_metadata_is_ignored(signed_provider, metadata):
+    provider, key, claims, _ = signed_provider
+    token = sign(key, {**claims, "user_metadata": metadata})
+
+    user = provider.authenticate_token(token)
+
+    assert str(user.id) == claims["sub"]
+    assert user.name is None

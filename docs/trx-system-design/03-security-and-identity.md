@@ -41,6 +41,8 @@ sequenceDiagram
 
 Supabase manages client sessions. FastAPI verifies each incoming token through the provider interface and stores no tokens or custom login sessions. Its adapter uses `get_claims()`, which caches asymmetric signing keys and falls back to Auth-server validation for legacy symmetric tokens.
 
+The backend uses the verified user ID and email and ignores profile-name metadata. Profile synchronization does not write the optional database display-name column. The existing `/auth/me` name field is `null` for Supabase users.
+
 Expired tokens receive 401. Open streams check expiry periodically and close with `session_expired`. Logout through the client SDK does not instantly invalidate an issued token; it can remain valid until expiry. Claims are a snapshot of identity/permissions when issued, not a live lookup of user changes.
 
 The backend connects directly to PostgreSQL as `postgres`. Token verification does not automatically attach the user's identity to that connection or activate user-specific RLS. Existing ownership checks remain required.

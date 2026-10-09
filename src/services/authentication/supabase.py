@@ -131,7 +131,6 @@ class SupabaseAuthenticationService(AuthenticationService):
         if not isinstance(expires_at, int):
             raise AuthenticationRejected("Access token expired")
 
-        profile = claims.get("user_metadata") or {}
         return VerifiedUser(
-            owner_id, claims.get("email"), profile.get("full_name"), expires_at
+            id=owner_id, email=claims.get("email"), expires_at=expires_at
         )

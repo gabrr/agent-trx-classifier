@@ -59,9 +59,7 @@ def current_user(
 
     if sessions is not None:
         with sessions.begin() as session:
-            synchronize_verified_profile(
-                session, user.id, email=user.email, display_name=user.name
-            )
+            synchronize_verified_profile(session, user.id, email=user.email)
 
     return user
 
