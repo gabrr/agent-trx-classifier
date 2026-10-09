@@ -6,7 +6,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from config import AgentConfig, load_environment
 from tools import file_to_markdown_factory, llm_factory, single_model_factory
-from tools.event_stream import event_stream
+from workflows.trx_classifier.event_stream import event_stream
 from tools.statement_file import StatementFileInput
 
 from .classification import ClassificationBatch, classify_transactions

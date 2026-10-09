@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from langgraph.graph.state import CompiledStateGraph
 
 from config import AgentConfig, database_config
-from tools.event_stream import workflow_events
+from workflows.trx_classifier.event_stream import workflow_events
 from tools.statement_file import StatementFileInput
 
 from .dependencies import current_user

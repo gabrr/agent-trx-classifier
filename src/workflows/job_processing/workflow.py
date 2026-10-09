@@ -11,7 +11,7 @@ from config import JobConfig
 from db.base import utc_now
 from db.models import JobAttempt
 from db.repositories import checkpoints, events, files, jobs, results
-from tools.event_stream import json_output
+from workflows.trx_classifier.event_stream import json_output
 from tools.statement_file import StatementFileInput
 from workflows.trx_classifier.classification import ClassificationBatch
 from workflows.trx_classifier.models import ExtractedStatement, NormalizedStatement

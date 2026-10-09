@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from api.app import create_app
 from api.dependencies import current_user
-from tools.event_stream import workflow_events
+from workflows.trx_classifier.event_stream import workflow_events
 from tools.statement_file import StatementFileInput
 from workflows.trx_classifier.models import NormalizedStatement
 from workflows.trx_classifier.workflow import build_workflow

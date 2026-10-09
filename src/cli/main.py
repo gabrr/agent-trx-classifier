@@ -3,7 +3,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-from tools.event_stream import workflow_events
+from workflows.trx_classifier.event_stream import workflow_events
 from tools.statement_file import StatementFileInput
 from workflows.trx_classifier.models import NormalizedStatement
 from workflows.trx_classifier.workflow import build_workflow

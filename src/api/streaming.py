@@ -2,7 +2,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 
-from tools.event_stream import WorkflowEvent
+from workflows.trx_classifier.event_stream import WorkflowEvent
 
 
 def encode_event(event: WorkflowEvent) -> str:
