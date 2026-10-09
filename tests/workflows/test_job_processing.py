@@ -1,5 +1,7 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from threading import Barrier, Event, current_thread
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -291,6 +293,100 @@ def test_failed_dispatch_remains_recoverable(service):
 
     jobs.queue.failure = None
     assert jobs.dispatch_pending_jobs() == 1
+
+
+def test_slow_dispatches_leave_connections_available(service, monkeypatch):
+    jobs, owners, _, _ = service
+    jobs.queue.failure = TaskQueueError("synthetic outage")
+    job_ids = [submit(jobs, owners[0], key=f"slow-{index}") for index in range(2)]
+
+    with jobs.sessions.begin() as session:
+        for intent in session.scalars(
+            select(models.Outbox).where(models.Outbox.job_id.in_(job_ids))
+        ):
+            intent.next_attempt_at = utc_now() - timedelta(seconds=1)
+
+    entered = Barrier(3)
+    release = Event()
+
+    def slow_enqueue(job_id, *, delivery_key):
+        entered.wait(timeout=10)
+
+        if not release.wait(timeout=10):
+            raise TimeoutError("Synthetic delivery was not released")
+
+        return QueuedTask(delivery_key)
+
+    monkeypatch.setattr(jobs.queue, "enqueue", slow_enqueue)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(jobs.dispatch_pending_jobs, job_id=job_id, limit=1)
+            for job_id in job_ids
+        ]
+        try:
+            entered.wait(timeout=10)
+
+            assert jobs.get_job(owners[0], job_ids[0])["status"] == "queued"
+        finally:
+            release.set()
+
+        assert [future.result(timeout=10) for future in futures] == [1, 1]
+
+
+@pytest.mark.parametrize("failure_type", [TaskQueueError, TaskTombstone])
+def test_late_dispatch_failure_preserves_success(service, monkeypatch, failure_type):
+    jobs, owners, _, _ = service
+    jobs.queue.failure = TaskQueueError("synthetic outage")
+    job_id = submit(jobs, owners[0])
+
+    with jobs.sessions.begin() as session:
+        intent = session.scalar(
+            select(models.Outbox).where(models.Outbox.job_id == job_id)
+        )
+
+        intent.next_attempt_at = utc_now() - timedelta(seconds=1)
+
+    entered = Barrier(3)
+    release_failure = Event()
+    delivery_keys = []
+
+    def concurrent_enqueue(job_id, *, delivery_key):
+        delivery_keys.append(delivery_key)
+        entered.wait(timeout=10)
+
+        if current_thread().name.startswith("failure"):
+            release_failure.wait(timeout=10)
+
+            raise failure_type("Synthetic late failure")
+
+        return QueuedTask(delivery_key)
+
+    monkeypatch.setattr(jobs.queue, "enqueue", concurrent_enqueue)
+
+    with (
+        ThreadPoolExecutor(max_workers=1, thread_name_prefix="success") as successful,
+        ThreadPoolExecutor(max_workers=1, thread_name_prefix="failure") as failing,
+    ):
+        success = successful.submit(jobs.dispatch_pending_jobs, job_id=job_id)
+        failure = failing.submit(jobs.dispatch_pending_jobs, job_id=job_id)
+        try:
+            entered.wait(timeout=10)
+
+            assert success.result(timeout=10) == 1
+        finally:
+            release_failure.set()
+
+        assert failure.result(timeout=10) == 0
+
+    assert len(set(delivery_keys)) == 1
+    with jobs.sessions() as session:
+        intent = session.scalar(
+            select(models.Outbox).where(models.Outbox.job_id == job_id)
+        )
+
+        assert intent.dispatch_status == "dispatched"
+        assert intent.last_error is None
 
 
 def test_tombstone_creates_new_durable_delivery(service):

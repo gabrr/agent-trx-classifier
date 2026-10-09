@@ -224,28 +224,55 @@ class PostgresJobService(JobService):
                     intent.dispatch_status = "cancelled"
                     continue
 
-                try:
-                    self.queue.enqueue(job.id, delivery_key=intent.task_name)
+                delivery_job_id = job.id
+                delivery_owner_id = job.owner_id
+                delivery_key = intent.task_name
 
-                except TaskTombstone:
-                    # Google remembers a deleted/completed task name. Retrying that
-                    # name cannot create another delivery, so persist a new intent.
-                    locked_job = jobs.get_job(session, job.owner_id, job.id, lock=True)
+            # The persisted delivery key makes concurrent sends retry-safe.
+            # No database connection or row lock is held during the queue call.
+            dispatch_error = None
+            try:
+                self.queue.enqueue(delivery_job_id, delivery_key=delivery_key)
 
+            except TaskTombstone:
+                dispatch_error = "delivery_tombstone"
+
+            except Exception:
+                # SDK errors can contain credentials; persist only a safe code.
+                dispatch_error = "dispatch_unavailable"
+
+            with self.sessions.begin() as session:
+                job = jobs.get_job(
+                    session, delivery_owner_id, delivery_job_id, lock=True
+                )
+
+                intent = session.scalar(
+                    select(Outbox).where(Outbox.id == intent_id).with_for_update()
+                )
+
+                # Another dispatcher may already have finalized this intent.
+                if intent is None or intent.dispatch_status != "pending":
+                    continue
+
+                if job.status in ("succeeded", "failed"):
                     intent.dispatch_status = "cancelled"
-                    intent.last_error = "delivery_tombstone"
+                    continue
+
+                if dispatch_error == "delivery_tombstone":
+                    intent.dispatch_status = "cancelled"
+                    intent.last_error = dispatch_error
                     if (
                         intent.retry_count >= self.settings.max_attempts
-                        and locked_job.status == "queued"
+                        and job.status == "queued"
                     ):
                         jobs._fail_locked(
                             session,
-                            locked_job,
+                            job,
                             "delivery_exhausted",
                             "Processing could not start. Please try again.",
                         )
 
-                    elif locked_job.status not in ("succeeded", "failed"):
+                    else:
                         session.add(
                             Outbox(
                                 job_id=job.id,
@@ -257,17 +284,16 @@ class PostgresJobService(JobService):
                             )
                         )
 
-                except Exception:
-                    # Deliberately store no SDK error string (it can contain credentials).
+                elif dispatch_error:
                     outbox.record_dispatch(
                         session,
-                        job.owner_id,
+                        delivery_owner_id,
                         intent.id,
-                        safe_error="dispatch_unavailable",
+                        safe_error=dispatch_error,
                     )
 
                 else:
-                    outbox.record_dispatch(session, job.owner_id, intent.id)
+                    outbox.record_dispatch(session, delivery_owner_id, intent.id)
 
                     dispatched += 1
 

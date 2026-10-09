@@ -84,6 +84,8 @@ A user retry of a failed job creates a new linked job. It does not reopen the or
 
 The processing deadline is reduced when work first starts and is not reset by automatic retries. A timeout ends that job; an explicit user retry gets a new deadline. Completed stages can be reused, but an interrupted stage may run again and incur another provider charge. The application wrapper does not implement a separate provider retry loop; SDK retry behavior depends on each adapter.
 
+The dispatcher reads each pending intent in a short transaction, releases the database connection before calling Cloud Tasks, and records the outcome in another short transaction. Concurrent dispatchers reuse the same persisted delivery key; outcome recording rechecks the intent so a late failure cannot overwrite a completed dispatch or create duplicate replacement intents.
+
 Queue concurrency limits outstanding dispatches. It does not guarantee that timed-out provider calls have stopped. Attempt checks protect database writes; the implementation has no global worker-slot coordinator. Cloud Tasks also does not guarantee execution order. [Delivery limitations](https://cloud.google.com/tasks/docs/common-pitfalls)
 
 ## Interfaces and source
