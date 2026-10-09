@@ -5,7 +5,10 @@ from config import database_url
 from db import models  # noqa: F401
 from db.base import Base
 
-url = database_url(admin=True)
+url = database_url()
+
+if not url:
+    raise ValueError("DATABASE_URL is required for migrations")
 
 
 def configure(connection=None):

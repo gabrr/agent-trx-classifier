@@ -1,4 +1,3 @@
-import os
 from uuid import uuid4
 
 import pytest
@@ -21,25 +20,20 @@ from workflows.trx_classifier.models import NormalizedStatement
 def database():
     runtime = database_url()
 
-    admin = os.environ.get("DATABASE_ADMIN_URL")
-
     # Reject production before connecting, including an accidental remote trx_test.
-    for url in (runtime, admin):
-        if not url:
-            pytest.fail("Explicit local trx_test runtime/admin URLs required")
+    if not runtime:
+        pytest.fail("Explicit local trx_test DATABASE_URL required")
 
-        parsed = make_url(url)
+    parsed = make_url(runtime)
 
-        if parsed.database != "trx_test" or parsed.host not in {
-            "localhost",
-            "127.0.0.1",
-            "db",
-        }:
-            pytest.fail("Smoke tests only allow local trx_test")
+    if parsed.database != "trx_test" or parsed.host not in {
+        "localhost",
+        "127.0.0.1",
+        "db",
+    }:
+        pytest.fail("Smoke tests only allow local trx_test")
 
     engine = create_database_engine(runtime)
-
-    administrator = create_database_engine(admin)
 
     factory = sessionmaker(engine, expire_on_commit=False)
 
@@ -53,8 +47,8 @@ def database():
 
         yield factory, owner_id, other_id
     finally:
-        # Explicit tiny-fixture cleanup uses admin; app has no audit DELETE grant.
-        with administrator.begin() as session:
+        # Remove only the synthetic records created by this fixture.
+        with engine.begin() as session:
             job_ids = select(models.Job.id).where(
                 models.Job.owner_id.in_([owner_id, other_id])
             )
@@ -118,8 +112,6 @@ def database():
             )
 
         engine.dispose()
-
-        administrator.dispose()
 
 
 @pytest.fixture(scope="module")

@@ -1,6 +1,5 @@
 from .accounts import Account
 from .activity_events import ActivityEvent
-from .authentication import LoginAttempt, SessionRecord
 from .categories import Category, ReportBucket
 from .checkpoints import Checkpoint
 from .events import Event
@@ -27,6 +26,4 @@ __all__ = [
     "Checkpoint",
     "Outbox",
     "ActivityEvent",
-    "SessionRecord",
-    "LoginAttempt",
 ]

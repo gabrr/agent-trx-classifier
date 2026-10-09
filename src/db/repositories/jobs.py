@@ -313,3 +313,67 @@ def recover_enqueue(session: Session, owner_id: UUID, job_id: UUID, *, max_attem
         session.add(intent)
 
     return intent
+
+
+def internal_job_owner(session: Session, job_id: UUID) -> UUID:
+    """Trusted service operation: never expose this lookup on user routes."""
+    owner_id = session.scalar(select(Job.owner_id).where(Job.id == job_id))
+
+    if owner_id is None:
+        raise LookupError("Job not found")
+
+    return owner_id
+
+
+def release_attempt(session, owner_id, job_id, attempt_id, *, error_code):
+    """Fence a transiently failed attempt while allowing a later delivery."""
+    job = guard_attempt(session, owner_id, job_id, attempt_id)
+
+    now = session.scalar(select(func.clock_timestamp()))
+
+    attempt = session.get(JobAttempt, attempt_id)
+
+    attempt.status = "failed"
+    attempt.error_code = error_code
+    attempt.finished_at = now
+    attempt.claim_expires_at = None
+    job.status = "queued"
+    job.active_attempt_id = None
+    job.claim_expires_at = None
+
+
+def finalize_expired(session, job_id, *, max_attempts=5):
+    owner_id = internal_job_owner(session, job_id)
+
+    job = get_job(session, owner_id, job_id, lock=True)
+
+    now = session.scalar(select(func.clock_timestamp()))
+
+    if job.status in ("succeeded", "failed"):
+        return False
+
+    if job.deadline_at and job.deadline_at <= now:
+        _fail_locked(
+            session, job, "deadline_exceeded", "Processing timed out. Please try again."
+        )
+
+        return True
+
+    if job.status == "running" and job.claim_expires_at and job.claim_expires_at > now:
+        return False
+
+    count = session.scalar(
+        select(func.count()).select_from(JobAttempt).where(JobAttempt.job_id == job_id)
+    )
+
+    if count >= max_attempts:
+        _fail_locked(
+            session,
+            job,
+            "attempts_exhausted",
+            "Processing could not complete. Please try again.",
+        )
+
+        return True
+
+    return False

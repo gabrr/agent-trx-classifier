@@ -46,7 +46,7 @@ def append_progress(session, owner_id, job_id, attempt_id, event_type, data):
 
     job = guard_attempt(session, owner_id, job_id, attempt_id)
 
-    job.current_stage = data.get("step")
+    job.current_stage = data.get("step_id") or data.get("step")
 
     return append_locked(session, job, event_type, data, attempt_id)
 

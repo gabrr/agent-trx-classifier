@@ -1,137 +1,81 @@
-# Google Cloud Tasks
+# Cloud Tasks and scheduled maintenance
 
-One task per PDF, one shared queue, **up to two concurrent dispatches** across
-all users. Setup: **CLI**. Run after the [bootstrap](README.md).
+Cloud Tasks delivers job references to FastAPI's processing route. Cloud Scheduler invokes maintenance to recover pending dispatch and finalize expired jobs. Both call the same backend using separate Google identities.
+
+Complete the [bootstrap](README.md#google-cloud-bootstrap) first. [Architecture and jobs](../trx-system-design/01-architecture-and-services.md#recovery) owns the processing and recovery behavior.
+
+```mermaid
+flowchart TD
+    O[(PostgreSQL jobs and outbox)] --> D[Backend dispatcher]
+    D -->|Named task with job_id| Q[Cloud Tasks]
+    Q -->|Task-caller OIDC token| P[POST /internal/process]
+    S[Cloud Scheduler] -->|Maintenance-caller OIDC token| M[POST /internal/maintenance]
+    M -->|Recover pending deliveries and finalize expired jobs| O
+    M --> D
+```
 
 ## Create and authorize
 
+The queue values below are starting examples. Measure capacity and coordinate queue retries with the application attempt/deadline policy before launch.
+
 ```sh
-gcloud tasks queues create "$TRX_QUEUE" --location="$TRX_REGION" --max-concurrent-dispatches=2 --max-dispatches-per-second=2 --max-attempts=5 --min-backoff=10s --max-backoff=300s
+gcloud tasks queues create "$TASKS_QUEUE" --location="$TASKS_LOCATION" \
+  --max-concurrent-dispatches=2 --max-dispatches-per-second=2 \
+  --max-attempts=5 --min-backoff=10s --max-backoff=300s
 
-gcloud tasks queues add-iam-policy-binding "$TRX_QUEUE" --location="$TRX_REGION" --member="serviceAccount:$TRX_RUNTIME_SA" --role=roles/cloudtasks.enqueuer
+gcloud iam roles create trxTaskDispatcher --project="$GOOGLE_CLOUD_PROJECT" \
+  --title="TRX task dispatcher" \
+  --permissions=cloudtasks.tasks.create,cloudtasks.tasks.get,cloudtasks.tasks.fullView \
+  --stage=GA
 
-gcloud iam service-accounts add-iam-policy-binding "$TRX_TASK_SA" --member="serviceAccount:$TRX_RUNTIME_SA" --role=roles/iam.serviceAccountUser
+gcloud tasks queues add-iam-policy-binding "$TASKS_QUEUE" --location="$TASKS_LOCATION" \
+  --member="serviceAccount:$RUNTIME_EMAIL" \
+  --role="projects/$GOOGLE_CLOUD_PROJECT/roles/trxTaskDispatcher"
 
-gcloud tasks queues describe "$TRX_QUEUE" --location="$TRX_REGION"
+gcloud iam service-accounts add-iam-policy-binding "$TASK_CALLER_EMAIL" \
+  --member="serviceAccount:$RUNTIME_EMAIL" --role=roles/iam.serviceAccountUser
+
+gcloud tasks queues describe "$TASKS_QUEUE" --location="$TASKS_LOCATION"
 ```
 
-Keep Google's Cloud Tasks service-agent role intact; it generates the OIDC token.
-The task-caller identity needs no database, storage, or AI access.
+Creation needs `tasks.create`; exact duplicate reconciliation also needs `tasks.get` and `tasks.fullView`. The runtime must be allowed to use the task-caller service account. Keep Google's managed Cloud Tasks service-agent role intact so Google can mint identity tokens.
 
-## Application integration
+## Application configuration
 
-Refactor the existing `classify` workflow into the processing handler below.
-The browser uploads through the job API; only authenticated tasks trigger that
-handler. Keep the TRX conversion/extraction/classification workflow reusable.
+[Cloud Run](cloud-run.md) maps `GOOGLE_CLOUD_PROJECT`, `TASKS_LOCATION`, `TASKS_QUEUE`, `BACKEND_URL`, `TASK_CALLER_EMAIL` and `MAINTENANCE_CALLER_EMAIL` into the backend.
 
-Create tasks using the Google client library and runtime service identity:
+The [queue adapter](../../src/tools/task_queue/google.py) sends POST `BACKEND_URL/internal/process`, JSON `{ "job_id": "UUID" }`, and an OIDC token whose audience is `BACKEND_URL`. Files remain in Storage. The adapter sets a 1,800-second dispatch deadline. The [job configuration](../../src/config.py) requires a shorter application processing timeout; these budgets are currently code defaults, not environment overrides.
 
-- URL: `TASK_AUDIENCE + /internal/jobs/{id}/process`; method POST.
-- OIDC service account: `TASK_CALLER_EMAIL`; audience: `TASK_AUDIENCE`.
-- Payload: job reference only; PDF bytes stay in Storage.
-- Set each task's dispatch deadline explicitly to **1,800 seconds**; finish or
-  cancel work before that deadline. Return 204 after committing success or a
-  terminal failure; use a retryable non-2xx only when automatic retry is intended.
+The backend verifies service tokens against `BACKEND_URL`, matching the audience used by Tasks and Scheduler. Caller identities need no database, Storage or AI credentials.
 
-Claim jobs atomically, identify attempts, and make completion idempotent. Retry
-transient failures; persist permanent failure and acknowledge it. Recover expired
-claims and record a terminal outcome when attempts are exhausted; do not leave
-jobs permanently active. Queue retries alone do not maintain application status.
+The queue limits outstanding requests, not surviving computation after timeout. Cloud Tasks may deliver duplicates and does not guarantee ordering. [Delivery limitations](https://cloud.google.com/tasks/docs/common-pitfalls)
 
-Two dispatches are not a strict cap on surviving executions after timeouts.
-Global worker-slot enforcement is deferred. Attempt cancellation, fence stale
-attempts, and prevent a timed-out worker from changing a terminal failure.
+## Scheduled maintenance
+
+After [Cloud Run deployment](cloud-run.md) sets `BACKEND_URL`, create the schedule using the maintenance identity. The one-minute cadence is an example; choose it with the recovery latency and database load in mind.
+
+```sh
+gcloud scheduler jobs create http trx-maintenance \
+  --project="$GOOGLE_CLOUD_PROJECT" --location="$TASKS_LOCATION" \
+  --schedule="* * * * *" \
+  --uri="$BACKEND_URL/internal/maintenance" \
+  --http-method=POST \
+  --oidc-service-account-email="$MAINTENANCE_CALLER_EMAIL" \
+  --oidc-token-audience="$BACKEND_URL"
+```
+
+The deploying identity needs `iam.serviceAccounts.actAs` on the maintenance caller. Keep Google's managed Scheduler service-agent role intact. The backend checks the exact maintenance identity independently of the task caller. [Scheduler authentication](https://cloud.google.com/scheduler/docs/http-target-auth)
+
+Maintenance examines persisted recovery state and deadlines; it does not poll browser progress. A durable schedule is required because an in-process loop cannot run while Cloud Run has scaled to zero.
 
 ## Verify
 
-Submit three jobs: at most two task requests should be outstanding. Inject one
-transient failure and confirm its retry produces one persisted result. Test a
-crash after result commit but before the 204 response.
+1. Reject missing tokens, wrong audiences, and swapped task/maintenance identities.
+2. Submit more jobs than queue concurrency and confirm the configured dispatch limit.
+3. Repeat delivery while processing and after completion; verify 409 for an active duplicate and 204 for a terminal job.
+4. Fail enqueue, lose a task-creation response, and exercise a reserved task name. Verify outbox reconciliation/recovery.
+5. Interrupt processing after a checkpoint and verify compatible resume within the remaining budget.
+6. Exhaust retries or kill the handler before it saves failure. Verify scheduled maintenance persists a terminal outcome.
+7. Lose acknowledgment after result commit and verify another delivery does not repeat model calls.
 
-[Queue settings](https://cloud.google.com/tasks/docs/configuring-queues)
-· [Task creation and OIDC](https://cloud.google.com/tasks/docs/creating-http-target-tasks)
-· [Deadlines](https://cloud.google.com/tasks/docs/reference/rest/v2/projects.locations.queues.tasks)
-
-## Confirmed recovery decisions
-
-These decisions are agreed; implementation is still pending. The queue command's
-five attempts/backoff values are initial candidates, not a measured retry budget.
-
-| Scenario | Chosen behavior |
-| --- | --- |
-| Job saved, enqueue fails or outcome is unknown | **Automatic recovery:** persist enqueue intent with the job in a transactional outbox; retry named task creation reliably. |
-| Worker crashes halfway through | **Resume saved stages:** reuse completed conversion/extraction/classification checkpoints instead of restarting the whole PDF. |
-| Temporary provider error | **Brief bounded retries inside the handler**, then a Cloud Tasks retry if attempts/time remain. Honor provider backoff and bound combined retries. |
-| Retry budget exhausted | **Persist failure and show its reason to the user.** No automatic repair/reprocessing after failure; the user can explicitly retry. Retain diagnostics. |
-| Processing deadline reached | **Persist timeout failure; attempt cancellation.** No automatic continuation or restart for that timed-out run. Revisit long-running processing later. |
-| Result committed but acknowledgment lost | **Completed-job check:** repeated delivery returns success without another AI call or result write. |
-| Timed-out worker survives alongside another delivery | **Keep the job failed and report the error.** Reject stale writes; do not start another attempt for that failed run. Global two-slot coordination is deferred. |
-
-### Enqueue and checkpoint recovery
-
-A durable authenticated dispatcher consumes outbox records; a background loop
-alone is insufficient when Cloud Run can scale to zero. Trigger dispatch through
-a scheduled maintenance invocation or another durable delivery mechanism; its
-provisioning is implementation work. Use deterministic task names to reconcile
-uncertain creates; task naming does not replace database idempotency.
-
-Checkpoint each completed stage before advancing. Store structured outputs in
-PostgreSQL; large converted text may use private Storage references. Record input
-identity and workflow/model/schema versions; resume only compatible checkpoints.
-An interrupted stage may run again and incur another provider charge. Attempt
-claims and checkpoint/result writes must be fenced against stale workers.
-
-### Failure, acknowledgment, and explicit retry
-
-Maintain an application attempt budget independent of unverified task headers.
-On success or terminal failure, commit the job outcome and durable event, issue
-`NOTIFY job_updates` in that transaction, then acknowledge the task. A later
-delivery for an already terminal run returns 204 without processing again.
-Transient failures return non-2xx only while the application allows retries.
-
-Do not rely on Cloud Tasks to update PostgreSQL when its retries end. Include a
-durable finalization check for the case where the last handler crashes before
-saving failure. A scheduled, authenticated finalization task on the shared queue
-can enforce a persisted overall job deadline, inspect the run, fence it, and
-record failure if still unfinished. This records an outcome; it does not repair
-or restart the PDF. If PostgreSQL is unavailable, finalization must retry.
-It reads recovery state, not periodically polled progress. Its deadline and
-application retry budget must be coordinated with the queue configuration.
-
-Use an application processing deadline shorter than 1,800 seconds, leaving time
-to cancel and commit failure. If the process dies first, the finalization check
-records the timeout/exhaustion outcome. Cancellation is best effort: reject late
-writes even if the old process survives. Fencing does not guarantee exactly two
-live executions; that stronger coordination is deferred by decision.
-
-An authenticated, owner-checked user retry creates a new job linked to the failed
-job, referencing the retained PDF and compatible checkpoints. Keep the original
-failure/history intact. Make retry submission idempotent so repeated clicks do
-not create multiple replacement jobs. Concurrent identical PDF uploads remain
-allowed; content deduplication is deferred.
-
-### Persisted outcome and diagnostics
-
-| Outcome | Persist |
-| --- | --- |
-| Success | Structured result, completion timestamp, optional success message. |
-| Failure | Stable error code, safe user-facing reason, failure timestamp, diagnostic reference. |
-| Attempt | Job/attempt IDs, stage, timestamps, retry counts, outcome, and sanitized technical details. |
-
-The upload already returned 202; later errors arrive through SSE and persisted
-job status, not a second response to the upload. Use messages such as “Processing
-timed out. Please try again.” Never expose stack traces, credentials, or private
-provider responses to the user. Retain diagnostic records without PDF contents.
-
-Cross-service log viewing, dashboards, alerting, and monitoring are **part two**.
-Part one still records job outcomes/attempt diagnostics and sanitized structured
-logs with job/attempt IDs; no additional logging platform is selected now.
-
-### Verify these decisions
-
-Test unknown enqueue outcome, crash after a checkpoint, bounded provider retries,
-last-attempt crash/finalization, timeout, explicit retry, and a lost acknowledgment.
-Ensure failed jobs emit a durable event, stale workers cannot overwrite failure,
-and successful terminal deliveries do not call AI again.
-
-[Delivery/retry limitations](https://cloud.google.com/tasks/docs/common-pitfalls)
+[Queue settings](https://cloud.google.com/tasks/docs/configuring-queues), [task creation](https://cloud.google.com/tasks/docs/creating-http-target-tasks), and [HTTP task deadlines](https://cloud.google.com/tasks/docs/reference/rest/v2/projects.locations.queues.tasks).

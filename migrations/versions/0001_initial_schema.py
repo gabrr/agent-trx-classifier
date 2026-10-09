@@ -348,26 +348,6 @@ ON private.categories FOR EACH ROW EXECUTE FUNCTION private.protect_category_own
  END IF;
 END $$""",
     """REVOKE ALL ON SCHEMA private FROM PUBLIC""",
-    """GRANT USAGE ON SCHEMA private TO trx_app""",
-    """GRANT SELECT ON ALL TABLES IN SCHEMA private TO trx_app""",
-    """REVOKE ALL ON private.alembic_version FROM trx_app""",
-    """GRANT INSERT, UPDATE ON private.accounts TO trx_app""",
-    """GRANT INSERT, UPDATE ON private.sessions TO trx_app""",
-    """GRANT INSERT, UPDATE ON private.login_attempts TO trx_app""",
-    """GRANT INSERT, UPDATE ON private.categories TO trx_app""",
-    """GRANT INSERT ON private.checkpoints TO trx_app""",
-    """GRANT INSERT ON private.events TO trx_app""",
-    """GRANT INSERT, UPDATE ON private.uploaded_files TO trx_app""",
-    """GRANT INSERT, UPDATE ON private.batches TO trx_app""",
-    """GRANT INSERT, UPDATE ON private.jobs TO trx_app""",
-    """GRANT INSERT, UPDATE ON private.job_attempts TO trx_app""",
-    """GRANT INSERT ON private.run_metrics TO trx_app""",
-    """GRANT INSERT, UPDATE ON private.outbox TO trx_app""",
-    """GRANT INSERT ON private.statements TO trx_app""",
-    """GRANT INSERT, UPDATE ON private.transactions TO trx_app""",
-    """GRANT INSERT, UPDATE ON private.users TO trx_app""",
-    """GRANT INSERT ON private.activity_events TO trx_app""",
-    """REVOKE UPDATE, DELETE, TRUNCATE ON private.activity_events FROM trx_app""",
 ]
 
 

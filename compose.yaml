@@ -4,15 +4,14 @@ services:
     image: postgres:17-bookworm
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${TRX_LOCAL_ADMIN_PASSWORD:-local-admin-only}
-      TRX_APP_PASSWORD: ${TRX_LOCAL_APP_PASSWORD:-local-app-only}
+      POSTGRES_PASSWORD: postgres
     ports:
-      - "127.0.0.1:${TRX_DB_PORT:-5433}:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - trx_dev_data:/var/lib/postgresql/data
       - ./docker/init-db.sh:/docker-entrypoint-initdb.d/10-trx.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d trx_dev"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 2s
       timeout: 3s
       retries: 20
@@ -21,14 +20,26 @@ services:
     build:
       context: .
       target: runtime
-    environment: &app-environment
-      DATABASE_URL: postgresql+psycopg://trx_app:${TRX_LOCAL_APP_PASSWORD:-local-app-only}@db:5432/trx_dev
-      DATABASE_LISTENER_URL: postgresql://trx_app:${TRX_LOCAL_APP_PASSWORD:-local-app-only}@db:5432/trx_dev
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/postgres
       PORT: 8080
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-trx-classifier}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      AUTH_SUPABASE_URL: ${AUTH_SUPABASE_URL:-}
+      AUTH_SUPABASE_PUBLISHABLE_KEY: ${AUTH_SUPABASE_PUBLISHABLE_KEY:-}
+      GCS_BUCKET: ${GCS_BUCKET:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      TASKS_LOCATION: ${TASKS_LOCATION:-}
+      TASKS_QUEUE: ${TASKS_QUEUE:-trx-processing}
+      BACKEND_URL: ${BACKEND_URL:-}
+      TASK_CALLER_EMAIL: ${TASK_CALLER_EMAIL:-}
+      MAINTENANCE_CALLER_EMAIL: ${MAINTENANCE_CALLER_EMAIL:-}
     ports:
-      - "127.0.0.1:${TRX_PORT:-8080}:8080"
+      - "127.0.0.1:${PORT:-8080}:8080"
     depends_on:
       db:
         condition: service_healthy
@@ -44,7 +55,7 @@ services:
       target: runtime
     profiles: [tools]
     environment:
-      DATABASE_ADMIN_URL: postgresql+psycopg://postgres:${TRX_LOCAL_ADMIN_PASSWORD:-local-admin-only}@db:5432/trx_dev
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/postgres
     command: ["alembic", "upgrade", "head"]
     depends_on:
       db:
@@ -55,11 +66,11 @@ services:
       target: test
     profiles: [tools]
     environment:
-      DATABASE_URL: postgresql+psycopg://trx_app:${TRX_LOCAL_APP_PASSWORD:-local-app-only}@db:5432/trx_test
-      DATABASE_ADMIN_URL: postgresql+psycopg://postgres:${TRX_LOCAL_ADMIN_PASSWORD:-local-admin-only}@db:5432/trx_test
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/trx_test
+      LANGSMITH_TRACING: "false"
     depends_on:
       db:
         condition: service_healthy
-    command: ["sh", "-c", "alembic upgrade head && python -m pytest tests/db/test_smoke.py -q"]
+    command: ["sh", "-c", "alembic upgrade head && python -m pytest tests -q"]
 volumes:
   trx_dev_data:

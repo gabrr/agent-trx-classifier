@@ -1,54 +1,33 @@
-# Google Cloud Storage
+# Cloud Storage
 
-Stores private source PDFs. PostgreSQL stores the object reference, not PDF bytes.
-Setup: **CLI**, after the [bootstrap](README.md).
+Cloud Storage holds private PDF and CSV inputs. PostgreSQL holds each file's bucket, object name, generation and checksum. Complete the [bootstrap](README.md#google-cloud-bootstrap) first.
 
 ## Create the bucket
 
 ```sh
-gcloud storage buckets create "gs://$TRX_BUCKET" --location="$TRX_REGION" --default-storage-class=STANDARD --uniform-bucket-level-access --public-access-prevention
+gcloud storage buckets create "gs://$GCS_BUCKET" --location="$TASKS_LOCATION" \
+  --default-storage-class=STANDARD --uniform-bucket-level-access --public-access-prevention
 
-gcloud storage buckets add-iam-policy-binding "gs://$TRX_BUCKET" --member="serviceAccount:$TRX_RUNTIME_SA" --role=roles/storage.objectUser
+gcloud storage buckets add-iam-policy-binding "gs://$GCS_BUCKET" \
+  --member="serviceAccount:$RUNTIME_EMAIL" --role=roles/storage.objectUser
 
-gcloud storage buckets describe "gs://$TRX_BUCKET"
+gcloud storage buckets describe "gs://$GCS_BUCKET"
 ```
 
-The runtime uploads, downloads, and cleans up objects using its service identity.
-No downloaded Google service-account key is needed. Set `PDF_BUCKET` in Cloud Run.
+The runtime uses its service identity for upload, read and cleanup. Set `GCS_BUCKET` in Cloud Run. Keep the bucket and backend in the same region.
 
-## Application integration
+## File ownership and retention
 
-Accept one multipart batch totaling at most **30,000,000 file bytes**. Validate
-files independently, save accepted PDFs using unique job-based object names, then
-persist/enqueue their jobs through the transactional outbox. Retain private large
-conversion checkpoints when needed for saved-stage recovery; PostgreSQL stores
-the reference/version. User retries can reuse their owned PDF and compatible
-checkpoints without uploading again. Stream transfers instead of retaining the whole batch
-in memory. Clean up abandoned uploads and reconcile partial failures.
+Uploads pass through FastAPI's authenticated [job API](../trx-classifier-contract.md#http-api). Object names include the owner, a unique upload identifier and a checksum. The application reads and deletes the persisted generation rather than whichever version happens to exist later.
 
-Keep Cloud Run and the bucket in the same region. Downloads to browsers require
-ownership checks; use the backend or short-lived signed URLs if later needed.
-Direct browser uploads and bucket CORS are not required for the agreed API upload.
+Source files remain after processing, allowing reprocessing and comparison with the original. User retry reuses the retained file. Repeated submissions with the same key are reconciled; content hashes alone do not reject duplicate uploads.
 
-## Retention and verification
+A file upload precedes the database transaction. If the commit outcome is unknown, the service keeps the object because it may belong to a committed job. Cleanup of abandoned uploads must reconcile database references first. See [submission flow](../trx-system-design/01-architecture-and-services.md#submission-and-processing).
 
-Keep accepted source PDFs after successful extraction, as decided. They allow
-verification against the original statement and reprocessing when extraction or
-classification changes. PostgreSQL remains the readable source for extracted
-information/results; it holds each PDF's private object reference.
+Automatic lifecycle deletion and user deletion are not configured. Define retention and reconciliation before enabling deletion. Account for soft-deleted objects and versions in storage estimates. The API currently exposes no file-download route.
 
-Do not add automatic lifecycle deletion yet. The earlier 30-day example was a
-cost assumption, not an agreed policy. Final retention/user deletion rules still
-need definition. Clean up abandoned uploads separately from retained job PDFs;
-never delete objects still needed by active attempts. Include soft-deleted objects
-and object versions in the storage budget.
+## Verify
 
-Exact duplicate detection is deferred. Identical PDFs may create separate jobs
-for now. If added later, compare content hashes within the user's authorized scope;
-never reveal another user's upload or reuse its result without permission.
+Confirm anonymous reads fail, the runtime can upload/read the persisted generation, and an invalid or oversized input is rejected before upload. Verify that cleanup cannot delete another generation or an active job's input.
 
-Verify that anonymous reads fail and that the runtime can save/read a PDF.
-Confirm oversized batches are rejected before creating processing jobs.
-
-[Bucket creation](https://cloud.google.com/storage/docs/creating-buckets)
-· [Storage pricing](https://cloud.google.com/storage/pricing)
+Implementation: [storage adapter](../../src/tools/object_storage/google.py). [Bucket creation](https://cloud.google.com/storage/docs/creating-buckets), [pricing](https://cloud.google.com/storage/pricing).

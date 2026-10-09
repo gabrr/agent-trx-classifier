@@ -39,7 +39,13 @@ def event_stream(
         update = operation(state)
 
         elapsed = perf_counter() - started
+        resumed = output_key is not None and state.get(output_key) is not None
+        if resumed:
+            elapsed = state.get("step_durations", {}).get(step_id, 0.0)
+
         completed = {**details, "elapsed_seconds": elapsed}
+        if resumed:
+            completed["resumed"] = True
 
         if output_key is not None:
             completed["output_type"] = (

@@ -1,32 +1,21 @@
-# TypeSafe → Jev
+# TypeSafe classification
 
-Classifies extracted transactions using typed decisions. Called directly through
-the existing TypeSafe SDK; OpenRouter is used for Gemini only.
-Setup: **existing API key + CLI**; console only for account, credits, or key replacement.
+The classifier uses the TypeSafe SDK to classify extracted transactions through Jev. The model and request implementation live in [the Jev adapter](../../src/tools/single_model/jev.py).
 
 ## Configure
 
-Keep the existing `TYPESAFE_API_KEY` in local environment/`.env`. Use the
-[secret helper](README.md):
+Set `TYPESAFE_API_KEY` through your local secret-management process, then use the [secret helper](README.md#secrets-and-configuration):
 
 ```sh
 publish_trx_secret TYPESAFE_API_KEY trx-typesafe-key
 ```
 
-The Cloud Run guide grants access and maps it to `TYPESAFE_API_KEY`. Current
-provider uses `jev-latest`. Consider pinning a tested version before launch for
-repeatable classification; this requires an application change.
+[Cloud Run](cloud-run.md) grants secret access and maps it to the application. Jev receives extracted fields/text rather than raw PDFs.
 
-## Verify and budget
+## Verify and measure
 
-Classify one extracted statement and confirm typed decisions match the expected
-categories. Measure total Jev input tokens across all classification calls per
-PDF; the initial estimate is 1,600 tokens/PDF.
+Classify representative statements and compare outputs against the [contract](../trx-classifier-contract.md). Record provider usage, errors and repeated calls. Completed job deliveries read persisted results instead of calling the model again.
 
-Handle authentication errors as configuration failures and rate limits as
-retryable failures. Include provider deadlines within the task's total deadline.
-Jev receives text/structured fields, not raw PDFs. Store final classification in
-PostgreSQL so completed task retries do not call the provider again.
+Checkpoint compatibility uses a fingerprint of the classifier code and configured model identifiers. Changes behind the mutable `jev-latest` alias are not detected automatically. See [checkpoint recovery](../trx-system-design/01-architecture-and-services.md#recovery).
 
-[TypeSafe models and pricing](https://docs.typesafe.ai/models)
-· [TypeSafe account](https://typesafe.ai/)
+[TypeSafe models](https://docs.typesafe.ai/models), [account](https://typesafe.ai/).

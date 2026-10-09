@@ -1,45 +1,45 @@
-# Google Cloud Run
+# Cloud Run
 
-Hosts one FastAPI service: user endpoints, task handler, TRX workflow, and SSE.
-Setup: **CLI**. Follow the [bootstrap](README.md) first.
+Cloud Run hosts the FastAPI user API, processing handler, maintenance handler and event streams. Complete the [bootstrap](README.md#google-cloud-bootstrap), database, authentication, bucket, queue and secret setup first.
 
 ## Before deployment
 
-The Dockerfile and `.dockerignore` are implemented; see
-[local build and checks](../database-and-docker/README.md). `trx-api` now runs one
-non-root Uvicorn worker on `0.0.0.0:$PORT` (default 8080) with locked dependencies
-and CPU PyTorch on Linux. Docling's required Linux libraries are installed.
-Model artifacts currently download/cache on first conversion; decide whether to
-pre-cache them in a production build and verify sizing before deployment.
+The [Docker setup](../database-and-docker/README.md) uses locked dependencies, CPU PyTorch and one non-root Uvicorn process. Docling models download on first conversion; measure cold-start time and decide whether to cache them in the production image.
 
-Implement job routes, user authentication, and task OIDC verification before
-exposing the service. Refactor the existing `classify` entry point into the internal
-Cloud Tasks processing handler; browser submission goes through the job API.
-Do not retain a public synchronous processing path that bypasses the queue.
-Isolate CPU-heavy conversion from the async event loop so
-SSE and other API requests remain responsive.
+Verify hosted login, real task delivery, proxy streaming and concurrent conversion capacity before launch. The [security guide](../trx-system-design/03-security-and-identity.md) explains why FastAPI authenticates each route family.
 
 ## Build and deploy
 
-After the Dockerfile, application changes, and all five secrets exist, prepare
-local `TRX_APP_ORIGIN`, `TRX_SUPABASE_URL`, and `TRX_SUPABASE_PUBLISHABLE_KEY` values
-from [authentication setup](authentication.md). The encryption key is the fifth
-secret. The example mounts secret version 1; use each secret's actual version.
+Use the shell loaded with your selected env file from [bootstrap](README.md#google-cloud-bootstrap). Confirm `AUTH_SUPABASE_URL` and `AUTH_SUPABASE_PUBLISHABLE_KEY` are configured as described in [authentication setup](authentication.md). The shell-local `image` value identifies this release; `_IMAGE` passes it to Cloud Build. The example mounts secret version 1; substitute each secret's actual version.
 
 ```sh
-gcloud artifacts repositories create trx --repository-format=docker --location="$TRX_REGION"
-export TRX_IMAGE="${TRX_REGION}-docker.pkg.dev/${TRX_PROJECT_ID}/trx/backend:v1"
-gcloud builds submit --tag "$TRX_IMAGE" .
+gcloud artifacts repositories create trx --repository-format=docker --location="$TASKS_LOCATION"
+image="${TASKS_LOCATION}-docker.pkg.dev/${GOOGLE_CLOUD_PROJECT}/trx/backend:YOUR_UNIQUE_RELEASE_TAG"
+# Build the runtime target explicitly; the Dockerfile's final stage is the test image.
+cat > /tmp/trx-cloudbuild.yaml <<'YAML'
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ['build', '--target', 'runtime', '-t', '${_IMAGE}', '.']
+images: ['${_IMAGE}']
+YAML
+gcloud builds submit --config=/tmp/trx-cloudbuild.yaml \
+  --substitutions="_IMAGE=$image" .
 
-for secret in trx-openrouter-key trx-typesafe-key trx-database-url trx-listener-url trx-token-encryption-key; do
-  gcloud secrets add-iam-policy-binding "$secret" --member="serviceAccount:$TRX_RUNTIME_SA" --role=roles/secretmanager.secretAccessor
+for secret in trx-openrouter-key trx-typesafe-key trx-database-url; do
+  gcloud secrets add-iam-policy-binding "$secret" --member="serviceAccount:$RUNTIME_EMAIL" --role=roles/secretmanager.secretAccessor
 done
 
-gcloud run deploy "$TRX_SERVICE" --image="$TRX_IMAGE" --region="$TRX_REGION" --service-account="$TRX_RUNTIME_SA" --allow-unauthenticated --min=0 --max=4 --concurrency=40 --cpu=1 --memory=2Gi --timeout=1800 --cpu-throttling --set-env-vars="GCP_PROJECT_ID=$TRX_PROJECT_ID,GCP_REGION=$TRX_REGION,PDF_BUCKET=$TRX_BUCKET,TASK_QUEUE=$TRX_QUEUE,TASK_CALLER_EMAIL=$TRX_TASK_SA,LANGSMITH_TRACING=false,APP_ORIGIN=$TRX_APP_ORIGIN,AUTH_CALLBACK_URL=$TRX_APP_ORIGIN/auth/callback,SUPABASE_URL=$TRX_SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY=$TRX_SUPABASE_PUBLISHABLE_KEY,SUPABASE_JWT_ISSUER=$TRX_SUPABASE_URL/auth/v1,SUPABASE_JWT_AUDIENCE=authenticated,SUPABASE_JWKS_URL=$TRX_SUPABASE_URL/auth/v1/.well-known/jwks.json,AUTH_SESSION_TTL_SECONDS=86400,AUTH_LOGIN_ATTEMPT_TTL_SECONDS=300" --set-secrets="OPENROUTER_API_KEY=trx-openrouter-key:1,TYPESAFE_API_KEY=trx-typesafe-key:1,DATABASE_URL=trx-database-url:1,DATABASE_LISTENER_URL=trx-listener-url:1,TOKEN_ENCRYPTION_KEY=trx-token-encryption-key:1"
+gcloud run deploy trx-classifier \
+  --image="$image" --region="$TASKS_LOCATION" \
+  --service-account="$RUNTIME_EMAIL" --allow-unauthenticated \
+  --min=0 --max=4 --concurrency=40 --cpu=1 --memory=2Gi \
+  --timeout=1800 --cpu-throttling \
+  --set-env-vars="GOOGLE_CLOUD_PROJECT=$GOOGLE_CLOUD_PROJECT,TASKS_LOCATION=$TASKS_LOCATION,GCS_BUCKET=$GCS_BUCKET,TASKS_QUEUE=$TASKS_QUEUE,TASK_CALLER_EMAIL=$TASK_CALLER_EMAIL,MAINTENANCE_CALLER_EMAIL=$MAINTENANCE_CALLER_EMAIL,LANGSMITH_TRACING=false,AUTH_SUPABASE_URL=$AUTH_SUPABASE_URL,AUTH_SUPABASE_PUBLISHABLE_KEY=$AUTH_SUPABASE_PUBLISHABLE_KEY" \
+  --set-secrets="OPENROUTER_API_KEY=trx-openrouter-key:1,TYPESAFE_API_KEY=trx-typesafe-key:1,DATABASE_URL=trx-database-url:1"
 
-export TRX_SERVICE_URL="$(gcloud run services describe "$TRX_SERVICE" --region="$TRX_REGION" --format='value(status.url)')"
-gcloud run services update "$TRX_SERVICE" --region="$TRX_REGION" --update-env-vars="TASK_AUDIENCE=$TRX_SERVICE_URL"
-curl --fail "$TRX_SERVICE_URL/health"
+export BACKEND_URL="$(gcloud run services describe trx-classifier --region="$TASKS_LOCATION" --format='value(status.url)')"
+gcloud run services update trx-classifier --region="$TASKS_LOCATION" --update-env-vars="BACKEND_URL=$BACKEND_URL"
+curl --fail "$BACKEND_URL/health"
 ```
 
 Builds require the selected Cloud Build service account to have the documented
@@ -50,10 +50,7 @@ policy before using this single-service, route-authenticated design.
 routes and the internal route separately. Cloud Run IAM cannot protect just one
 route. Verify task audience and the allowed service-account identity.
 
-On the initial revision, the internal route must reject processing while
-`TASK_AUDIENCE` is unset; enable enqueue/processing only after the URL update and
-OIDC verification. Handle SIGTERM by stopping new claims, cancelling work safely,
-and leaving recoverable state; close DB listeners and local SSE subscribers.
+The initial revision lacks `BACKEND_URL`, so job configuration and internal authentication fail closed. Complete the URL update and verify OIDC before allowing submissions. Then configure [scheduled maintenance](cloud-tasks.md#scheduled-maintenance). Verify shutdown/cancellation and durable recovery during revision replacement.
 
 CPU, memory, instance cap, and request concurrency above are initial candidates.
 Request concurrency includes SSE and uploads; **do not set it to 2 to limit jobs**.
@@ -61,7 +58,7 @@ The queue controls dispatches. Benchmark two conversions and their memory use;
 raise CPU/memory if needed. Use a shorter application deadline to attempt
 cancellation and persist timeout failure before task expiry. Do not automatically
 continue timed-out runs; fence late writes and use durable failure finalization.
-Follow the [confirmed recovery rules](cloud-tasks.md).
+See [job recovery](../trx-system-design/01-architecture-and-services.md#recovery).
 
 ## Verify
 
@@ -76,16 +73,17 @@ Use a unique image tag for each deployment and record the last known good revisi
 If a new revision fails validation, direct traffic back to the recorded revision:
 
 ```sh
-gcloud run revisions list --service="$TRX_SERVICE" --region="$TRX_REGION"
-gcloud run services update-traffic "$TRX_SERVICE" --region="$TRX_REGION" --to-revisions=LAST_KNOWN_GOOD_REVISION=100
+gcloud run revisions list --service=trx-classifier --region="$TASKS_LOCATION"
+gcloud run services update-traffic trx-classifier --region="$TASKS_LOCATION" --to-revisions=LAST_KNOWN_GOOD_REVISION=100
 ```
 
 Keep database changes backward-compatible with that revision. Traffic rollback
 does not undo migrations or restart existing task attempts; use the persisted
-claim/recovery rules. Avoid logging PDF contents, credentials, or callback codes;
+claim/recovery rules. Avoid logging PDF contents, credentials, or access tokens;
 emit sanitized structured logs with job/attempt IDs and persist safe failure reasons.
-Cross-service log viewing/monitoring is part two, including failed/stuck jobs,
-provider errors, queue backlog, and database connections.
+Configure monitoring for failed/stuck jobs, provider errors, queue age, event delay and database connections.
 
-[Build/deploy permissions](https://cloud.google.com/run/docs/deploying-source-code)
+[Container builds](https://cloud.google.com/build/docs/building/build-containers)
+· [Build substitutions](https://cloud.google.com/build/docs/configuring-builds/substitute-variable-values)
+· [Build/deploy permissions](https://cloud.google.com/run/docs/deploying-source-code)
 · [Secret configuration](https://cloud.google.com/run/docs/configuring/services/secrets)

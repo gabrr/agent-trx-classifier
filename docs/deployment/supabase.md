@@ -1,134 +1,63 @@
 # Supabase PostgreSQL
 
-Start on **Free**. Stores batches, jobs, results, and durable ordered events.
-Setup: **CLI** for project/migrations; **dashboard** for signup and connection details.
+PostgreSQL stores application ownership, jobs, results, user profiles, ordered events and recovery state. Supabase Auth manages provider identities separately. Complete [local database setup](../database-and-docker/README.md) before applying a production migration.
 
-## Existing project and migration
+## Schema and migration
 
-Reuse the existing `acetate-agentic` project and its `postgres` database. Do not
-create another project/database for TRX. The administrative connection was checked
-on October 8, 2026. Local implementation now uses Alembic migration `0001`;
-see [database and Docker](../database-and-docker/README.md) for verified local
-commands and the separate production migration command. Supabase CLI `db push`
-is not the migration mechanism for this application. Production migration and
-deployment remain follow-up work after review.
+For the existing Acetate environment, use the `agent-trx-classifier` project and its `postgres` database. Confirm the target project before running administrative commands.
 
-## Schema and connections
+Application tables live in `private`, which must be excluded from Supabase's exposed Data API schemas. Supabase-managed schemas remain owned by Supabase. [Alembic migrations](../../migrations/versions/) define the application schema; Supabase CLI `db push` is not this application's migration mechanism.
 
-Put application tables in a `private` schema excluded from Supabase's exposed
-Data API schemas. Supabase Auth manages its own users; do not recreate its tables.
+Use the [production migration procedure](../database-and-docker/README.md#configuration-and-supabase-boundary). It explains the optional same-project `auth.users` foreign key. Runtime startup does not run migrations. Migration `0002` removes obsolete backend authentication tables only when they are empty; Supabase-managed authentication tables are unchanged.
 
-| Table | Stores |
-| --- | --- |
-| `batches`, `jobs` | Verified owner ID, PDF object reference, status/result, completion/failure time, optional success message, safe error code/reason, diagnostic reference, retry-of job ID, attempt ID, claim expiry, and enqueue state. |
-| `events` | Event ID, job ID, per-job sequence, attempt ID, type, timestamp, and output. |
-| `outbox` | Transactional enqueue intent, deterministic task name, dispatch state, retry timing, and finalization scheduling. |
-| `checkpoints`, `job_attempts` | Stage outputs or private Storage references, input/workflow/model/schema versions, attempt IDs, retry counts, timestamps, and sanitized failure details. |
-| `sessions` | Hashed opaque ID, verified user ID, encrypted provider tokens, CSRF token, expiry, revocation, and refresh coordination state. |
-| `login_attempts` | Hashed browser-bound attempt ID, encrypted PKCE verifier, expiry, and one-use state. |
+## Database access
 
-Enforce unique `(job_id, sequence)` and indexes for owner/active jobs, session
-hashes, and expired claims. Allocate sequences and update job/event state in the
-same transaction. Include the outbox and saved-stage recovery tables in the initial
-migration. Fence checkpoint/result writes with the current attempt and reject
-writes to terminal runs. Preserve failed history when user retry creates a linked
-replacement job; enforce idempotent retry submission.
-Authentication expiry cleanup is later work. Keep events until a retention policy is agreed.
-See [authentication](authentication.md) and [confirmed task decisions](cloud-tasks.md).
+The backend and migrations use the `postgres` role. Use one `DATABASE_URL`, including the password, for the backend and migration commands.
 
-### Restricted runtime role
+The role has administrative database access. FastAPI repositories enforce verified ownership on user queries and preserve application history; direct SQL connections do not inherit a browser user's RLS identity.
 
-Before the reviewed production migration, run this as the migration owner in a trusted `psql` session.
-Use `\password trx_app` there to set a password interactively; never commit it.
+## Connections and secrets
 
-```sql
-CREATE ROLE trx_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION;
-GRANT CONNECT ON DATABASE postgres TO trx_app;
-```
+Use Supabase’s session-pooler connection for `DATABASE_URL`, or a direct connection when reachable. Queries and the notification listener use this same URL. The listener keeps its own connection open.
 
-Use the administrative Alembic command in the [implementation guide](../database-and-docker/README.md)
-to create the schema and grant table access. Do not grant DELETE across application
-tables, or UPDATE/DELETE/TRUNCATE on activity history. Events, checkpoints, statements,
-and run metrics are immutable for the runtime role. Role ownership, DDL, inherited
-privileged memberships, and Supabase service schema access are excluded. Verify
-that `trx_app` has no CREATE permission through `public` or other inherited grants.
-FastAPI repositories scope every query to a verified owner; direct SQL does not
-inherit a browser user's RLS identity. Admin credentials stay outside Cloud Run.
+For the session pooler, use the dashboard's connection host/port/database with username `postgres.PROJECT_REF` and the database password. URL-encode credentials and configure TLS certificate verification supported by the driver. [Connection modes](https://supabase.com/docs/guides/database/connecting-to-postgres)
 
-### Connections
-
-Use the dashboard's **Connect → Session pooler** details for the listener; it
-supports IPv4 and session state. Store this SSL-enabled URI as
-`DATABASE_LISTENER_URL`. `DATABASE_URL` can use session pooling initially, or
-transaction pooling with a compatible driver. Never use transaction pooling for
-`LISTEN`. Prefer a scoped application database role; reserve admin credentials
-for migrations. For the session pooler, use the custom role username `trx_app.PROJECT_REF`
-and its own password; retain the dashboard host/port/database. URL-encode the
-password and require TLS with certificate verification supported by the driver.
-
-Add these two values to local environment/`.env`, then use the [secret helper](README.md):
+Publish the database URL with the [secret helper](README.md#secrets-and-configuration):
 
 ```sh
 publish_trx_secret DATABASE_URL trx-database-url
-publish_trx_secret DATABASE_LISTENER_URL trx-listener-url
 ```
 
-Each backend process holds one dedicated listener connection on `job_updates`.
-Append events and notify in one transaction. Listen/register before replay;
-catch up on notifications and reconnects, deduplicate delivery, and use SSE
-heartbeats without database queries. Use one Uvicorn process per instance,
-a query pool capped at two connections, and one dedicated listener: initially
-three connections per instance. Four instances means about twelve application
-connections, plus deployment overlap/admin connections. Validate this against
-the project limit; the Cloud Run instance cap is not a hard DB connection cap.
+Each process has one dedicated listener plus the query pool configured in [engine.py](../../src/db/engine.py). Budget connections across maximum instances, revision overlap, administrative work and other applications. An instance cap is not a hard database connection cap.
 
-## Job outcomes and diagnostics
-
-Persist success results and optional messages, or a safe failure code/reason and
-diagnostic reference. Keep detailed sanitized attempt records private; user-facing
-queries/events expose only safe errors. Conversion checkpoints may reference
-private Storage objects to avoid filling the Free database with large text.
-
-Failure finalization must work even if the last worker crashes. User retry creates
-a new owned job linked to the original and reuses only compatible checkpoints.
-Cross-service log aggregation/viewing is part two; outcome/attempt records are
-part of the initial schema. Do not store PDF contents or secrets in diagnostics.
+[Events and live updates](../trx-system-design/02-events-and-live-updates.md) explains event ordering, transaction notifications and replay.
 
 ## Backup and recovery
 
-Install PostgreSQL client tools. Configure a local `trx_admin` connection using
-libpq service/password files with restrictive permissions; keep those files and
-backups outside Git. Use a session-capable connection for admin work.
+Install PostgreSQL client tools. Configure administrative connections using restrictive libpq service/password files outside Git. Keep dumps encrypted and outside the repository.
 
 ```sh
-pg_dump --dbname=service=trx_admin --schema=private --format=custom --no-owner --file=/YOUR_PRIVATE_BACKUP_DIRECTORY/trx-private.dump
+pg_dump --dbname=service=trx_admin --schema=private --format=custom --no-owner \
+  --file=/YOUR_PRIVATE_BACKUP_DIRECTORY/trx-private.dump
 pg_restore --list /YOUR_PRIVATE_BACKUP_DIRECTORY/trx-private.dump
 ```
 
-Take an encrypted private-schema backup before migrations and daily once live.
-Test restoration to an isolated empty database using `pg_restore --no-owner
---no-privileges --dbname=service=trx_restore BACKUP_FILE`, then reapply grants.
-Invalidate restored browser sessions and login attempts; reconcile unfinished
-jobs before resuming task dispatch. Keep required token-encryption key versions
-available securely for legitimate recovery.
+Back up before migrations and select a regular schedule based on acceptable data loss. Test restoration into an isolated database with compatible schema dependencies:
 
-This is an application-data backup, not a complete Supabase project backup:
-Auth users/configuration and PDF objects need separate recovery coverage. Document
-and test identity recovery before launch; keep retained bucket objects private.
-Do not assume the Free project supplies a complete restore workflow.
+```sh
+pg_restore --no-owner --no-privileges --dbname=service=trx_restore BACKUP_FILE
+```
 
+Reconcile unfinished jobs before resuming dispatch. When Auth foreign keys are enabled, the restore target must also supply the corresponding Auth users/dependencies.
+
+A `private` schema dump is not a complete Supabase backup. Auth users/configuration and Storage objects need separate recovery coverage. Test these together; do not assume the selected hosting plan provides them.
 
 ## Verify
 
-Commit a job event and `NOTIFY` from one connection; receive and read it through
-another. Restart the listener and replay missed events. Test job ownership.
-Free includes 500 MB database storage and 5 GB egress; inactive projects may pause
-after a week. Add event retention and monitor usage before considering Pro.
+- Confirm authenticated requests cannot access another user's records.
+- Commit an event and notification; receive it from another connection.
+- Restart the listener and verify missed-event replay.
+- Verify TLS, connection limits and the plan's storage/egress/availability constraints.
+- Restore a backup and reconcile jobs and identity dependencies before serving traffic.
 
-[CLI reference](https://supabase.com/docs/reference/cli/supabase-projects-create)
-· [Connections](https://supabase.com/docs/guides/database/connecting-to-postgres)
-· [Free plan](https://supabase.com/pricing)
-
-[Database roles](https://supabase.com/docs/guides/database/postgres/roles)
-· [pg_dump](https://www.postgresql.org/docs/current/app-pgdump.html)
-· [pg_restore](https://www.postgresql.org/docs/current/app-pgrestore.html)
+[Roles](https://supabase.com/docs/guides/database/postgres/roles), [hosting plans](https://supabase.com/pricing), [pg_dump](https://www.postgresql.org/docs/current/app-pgdump.html), [pg_restore](https://www.postgresql.org/docs/current/app-pgrestore.html).

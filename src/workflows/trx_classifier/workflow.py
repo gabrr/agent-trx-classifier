@@ -43,6 +43,12 @@ def build_workflow() -> CompiledStateGraph:
     classifier = single_model_factory("jev")
 
     def convert(state: ClassifierState) -> dict:
+        if state.get("document_text") is not None:
+            return {
+                "document_text": state["document_text"],
+                "document_format": state["document_format"],
+            }
+
         file = state.get("file")
 
         if file is None:
@@ -55,6 +61,9 @@ def build_workflow() -> CompiledStateGraph:
         return {"document_text": text, "document_format": file.format}
 
     def extract(state: ClassifierState) -> dict:
+        if state.get("extracted") is not None:
+            return {"extracted": ExtractedStatement.model_validate(state["extracted"])}
+
         response = extractor.prompt(state["document_text"])
 
         extracted = ExtractedStatement.model_validate(response.structured_output)
@@ -62,6 +71,15 @@ def build_workflow() -> CompiledStateGraph:
         return {"extracted": extracted}
 
     def classify(state: ClassifierState) -> dict:
+        if state.get("batch") is not None:
+            from pydantic import TypeAdapter
+
+            return {
+                "batch": TypeAdapter(ClassificationBatch).validate_python(
+                    state["batch"]
+                )
+            }
+
         batch = classify_transactions(classifier, state["extracted"].transactions)
 
         return {"batch": batch}

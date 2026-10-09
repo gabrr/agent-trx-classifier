@@ -1,32 +1,21 @@
-# OpenRouter → Gemini 3.8 Flash
+# OpenRouter extraction
 
-Extracts structured statement data after Docling converts the PDF.
-Existing workflow model: `openrouter:google/gemini-3.8-flash`.
-Setup: **existing API key + CLI**; console only for account, credits, or key replacement.
+The classifier sends prepared statement text to OpenRouter for structured transaction extraction. The model is selected in [the classifier workflow](../../src/workflows/trx_classifier/workflow.py).
 
 ## Configure
 
-Keep the existing `OPENROUTER_API_KEY` in local environment/`.env`. Use the
-[secret helper](README.md) to copy only this value to Google Secret Manager:
+Set `OPENROUTER_API_KEY` through your local secret-management process, then use the [secret helper](README.md#secrets-and-configuration):
 
 ```sh
 publish_trx_secret OPENROUTER_API_KEY trx-openrouter-key
 ```
 
-The Cloud Run guide grants access and maps the secret back to
-`OPENROUTER_API_KEY`. The model currently lives in `workflow.py`, not an environment
-variable. No separate Gemini key or Google AI deployment is needed.
+[Cloud Run](cloud-run.md) grants secret access and maps it to the application. The model is configured in code rather than through an environment variable.
 
-## Verify and budget
+## Verify and measure
 
-Run one authorized end-to-end sample after deployment. Confirm extraction returns
-the expected schema; record billable input, output/thinking tokens, and cost.
-Keep keys and financial document contents out of logs.
+Run a representative statement through the deployed workflow. Validate the extraction schema and measure actual billed usage, including failed or repeated attempts. Keep credentials and financial document contents out of logs. Ensure account credits and quotas support the intended workload.
 
-Budget assumption: 20,000 total tokens/PDF; input/output split still needs
-measurement. Retry and fallback calls add usage. Ensure the OpenRouter account
-has credits. Optional LangSmith tracing is disabled in the initial Run command;
-enabling it requires its own secret and a deliberate document-data policy.
+Optional LangSmith tracing requires its own credentials and a policy for financial document data. See [usage credentials](../trx-classifier-usage.md#credentials).
 
-[Model and pricing](https://openrouter.ai/google/gemini-3.8-flash)
-· [Account/billing support](https://openrouter.ai/support/)
+[OpenRouter models](https://openrouter.ai/models), [account support](https://openrouter.ai/support/).

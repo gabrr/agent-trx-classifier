@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.app import create_app
+from api.dependencies import current_user
 from tools.event_stream import workflow_events
 from tools.statement_file import StatementFileInput
 from workflows.trx_classifier.models import NormalizedStatement
@@ -153,9 +154,14 @@ def test_api_preserves_sse_contract(workflow, monkeypatch):
     monkeypatch.setattr(
         app_module,
         "database_config",
-        lambda: SimpleNamespace(runtime_url=None, listener_url=None),
+        lambda: SimpleNamespace(runtime_url=None),
     )
-    with TestClient(create_app(workflow=workflow)) as client:
+    app = create_app(workflow=workflow, allow_direct_classify=True)
+
+    app.dependency_overrides[current_user] = lambda: SimpleNamespace(
+        user_id="synthetic"
+    )
+    with TestClient(app) as client:
         response = client.post(
             "/classify", files={"file": ("bad.pdf", b"not a PDF", "application/pdf")}
         )
@@ -260,10 +266,15 @@ def test_api_builds_graph_lazily_and_reuses_it(workflow, monkeypatch):
     monkeypatch.setattr(
         app_module,
         "database_config",
-        lambda: SimpleNamespace(runtime_url=None, listener_url=None),
+        lambda: SimpleNamespace(runtime_url=None),
     )
 
-    with TestClient(create_app()) as client:
+    app = create_app(allow_direct_classify=True)
+
+    app.dependency_overrides[current_user] = lambda: SimpleNamespace(
+        user_id="synthetic"
+    )
+    with TestClient(app) as client:
         assert client.get("/health").status_code == 200
         assert builds == []
         for _ in range(2):

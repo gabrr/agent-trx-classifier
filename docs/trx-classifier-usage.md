@@ -7,15 +7,18 @@ For first-time setup, start with the [README](../README.md#quick-start).
 
 The classifier loads this app's `.env` once per process; existing process
 environment variables take precedence. Restart the process after changing `.env`.
+Use `uv run --env-file .env.prod trx-api` to load production settings explicitly.
+Both `.env` and `.env.prod` are private files excluded from Git and Docker build contexts;
+[`.env.example`](../.env.example) is the shared template.
 
 | Variable | Used for |
 | --- | --- |
 | `OPENROUTER_API_KEY` | Gemini transaction extraction. |
 | `TYPESAFE_API_KEY` | Jev transaction classification. |
 | `LANGSMITH_API_KEY` | Tracing, dataset synchronization, and evaluation. |
-| `LANGSMITH_TRACING` | Enables tracing when set to `true` in the example configuration. Set to `false` to disable tracing for CLI/API runs. |
+| `LANGSMITH_TRACING` | Enables tracing when set to `true`. Set to `false` to disable tracing for CLI/API runs. |
 | `LANGSMITH_PROJECT` | Trace project; defaults to `trx-classifier`. |
-| `LANGSMITH_ENDPOINT` | LangSmith service endpoint; supplied in `.env.example`. |
+| `LANGSMITH_ENDPOINT` | Optional LangSmith service endpoint override. |
 
 CLI/API classification requires OpenRouter and TypeSafe credentials. LangSmith
 credentials are needed when tracing is enabled and for dataset/evaluation
@@ -65,13 +68,9 @@ valid result.
 uv run trx-api
 ```
 
-Binds to `127.0.0.1:8000`. `GET /health` reports readiness; `POST /classify` accepts
-multipart field `file` and streams SSE events. Only one classification runs at a
-time: overlapping requests receive HTTP 409. Invalid PDF/CSV files receive HTTP 422;
-failures after streaming starts are sent as `error` events.
+Binds to `0.0.0.0:$PORT`, default port 8080. `/health` is liveness and `/ready` checks PostgreSQL. Verified Supabase Bearer tokens protect user routes. POST `/api/jobs` accepts multipart `file` plus `Idempotency-Key` and Authorization headers, returning 202. Owner-checked status/result/event routes expose persisted outcomes; Cloud Tasks invokes the independently authenticated internal processing route.
 
-For the browser client and its proxy configuration, see
-[Acetate Web 0.1](../../acetate-web-0.1/README.md).
+The default HTTP `/classify` path is disabled (410 after token verification). Direct CLI classification remains available. Acetate Web 0.1 uses the older direct classification interface. For the authenticated job API, use the [API contract](trx-classifier-contract.md#http-api) and [deployment guide](deployment/README.md).
 
 ## Dataset synchronization
 
@@ -133,8 +132,8 @@ Project readability conventions are in [AGENTS.md](../AGENTS.md).
 | Missing credentials or provider authentication failure | App `.env` and process environment overrides; see the credential table above. |
 | Slow first conversion | Docling downloads models on first use. |
 | File rejected | Nonempty content, PDF/CSV extension, valid PDF signature or UTF-8 CSV text, and the 25 MiB limit. |
-| API cannot bind port 8000 | Another service, such as the backend API, may already use that port. |
-| Web upload cannot reach the classifier | API availability and the web app's `CLASSIFIER_API_URL`; see its README. |
+| API cannot bind its configured port | Another service, such as the backend API, may already use that port. |
+| Job submission fails | Bearer token, idempotency key, database, bucket and task configuration; see the deployment guides. |
 | Dataset/evaluation authentication failure | LangSmith key and endpoint, even if tracing is disabled. |
 
 ## SDK references
