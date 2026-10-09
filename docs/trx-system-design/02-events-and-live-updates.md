@@ -78,7 +78,7 @@ The API currently has no active-job listing route. Clients must retain job IDs o
 - Progress is read on subscription, notification and listener reconnect. Heartbeats do not query job progress.
 - An open stream checks access-token expiry periodically and sends `session_expired` before closing. Supabase logout does not immediately invalidate issued access tokens; the client should close its streams when signing out.
 - Each stream has a bounded queue. Overflow closes the stream so a client can reconnect and replay.
-- Terminal events close the stream; disconnects release the subscription. An already-terminal job with no remaining history also closes without a new terminal frame.
+- Terminal events close the stream; disconnects release the subscription. Cleanup runs in a worker thread and is shielded from stream cancellation so listener locks do not block other requests. An already-terminal job with no remaining history also closes without a new terminal frame.
 - Configure the frontend proxy to preserve streaming and disable buffering. Clients must reconnect after network or platform request timeouts.
 
 Frontend stream requests carry a Bearer token and reconnect with `Last-Event-ID`. See the [API stream](../../src/api/jobs.py), [listener](../../src/db/listener.py), and [event repository](../../src/db/repositories/events.py) for implementation.

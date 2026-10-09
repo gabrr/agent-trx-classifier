@@ -3,6 +3,7 @@ import json
 from typing import Annotated
 from uuid import UUID
 
+import anyio
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -175,13 +176,16 @@ async def stream_job_events(
         def deliver(event):
             loop.call_soon_threadsafe(put, event)
 
-        token = await asyncio.to_thread(
-            listener.subscribe,
-            principal.id,
-            job_id,
-            deliver,
-            after_sequence=after_sequence,
-        )
+        # Finish registration before cancellation can trigger cleanup.
+        with anyio.CancelScope(shield=True):
+            token = await anyio.to_thread.run_sync(
+                lambda: listener.subscribe(
+                    principal.id,
+                    job_id,
+                    deliver,
+                    after_sequence=after_sequence,
+                )
+            )
 
         cursor = after_sequence
         next_auth_check = loop.time()
@@ -219,7 +223,8 @@ async def stream_job_events(
                     return
 
         finally:
-            listener.unsubscribe(token)
+            with anyio.CancelScope(shield=True):
+                await anyio.to_thread.run_sync(listener.unsubscribe, token)
 
     return StreamingResponse(
         stream(),
