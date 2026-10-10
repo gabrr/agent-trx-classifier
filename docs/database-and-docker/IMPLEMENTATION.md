@@ -127,5 +127,5 @@ Cloud Run deployment; model artifact caching/sizing and monitoring. Production
 readiness must also verify that `private` is excluded from the Data API and the
 listener uses a session-capable connection.
 
-The original synchronous `/classify` flow and per-file limit are preserved; these
-repository operations do not yet turn that endpoint into the future job worker.
+At this stage, classification still ran through a direct HTTP endpoint. The current
+API submits jobs through `/api/jobs`; use the [API contract](../trx-classifier-contract.md#http-api).

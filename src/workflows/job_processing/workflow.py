@@ -11,9 +11,9 @@ from config import JobConfig
 from db.base import utc_now
 from db.models import JobAttempt
 from db.repositories import checkpoints, events, files, jobs, results
-from workflows.trx_classifier.event_stream import json_output
 from tools.statement_file import StatementFileInput
 from workflows.trx_classifier.classification import ClassificationBatch
+from workflows.trx_classifier.event_stream import json_output
 from workflows.trx_classifier.models import ExtractedStatement, NormalizedStatement
 
 from .models import JobProcessingOutcome, JobProcessingState
@@ -35,13 +35,12 @@ def workflow_fingerprint():
         "criteria.py",
         "classification.py",
         "models.py",
+        "event_stream.py",
     ):
         digest.update((directory / name).read_bytes())
 
     source = Path(__file__).parents[2]
     digest.update((source / "config.py").read_bytes())
-
-    digest.update((source / "tools" / "event_stream.py").read_bytes())
 
     for package in ("llm", "single_model", "file_to_markdown", "statement_file"):
         for path in sorted((source / "tools" / package).glob("*.py")):

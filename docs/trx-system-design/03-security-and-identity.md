@@ -2,6 +2,8 @@
 
 User requests carry Supabase access tokens. Processing and maintenance requests carry Google service identity tokens. FastAPI verifies the identity required by each route.
 
+Interactive API documentation and the schema endpoints (`/docs`, `/redoc`, and `/openapi.json`) are disabled by default through `ApiConfig.enable_docs` in `src/config.py` and return 404. Health and readiness checks remain public.
+
 ## Trust boundaries
 
 ```mermaid

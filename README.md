@@ -48,9 +48,9 @@ input limits, events, and errors.
 uv run trx-api
 ```
 
-The API defaults to `http://127.0.0.1:8080`. `GET /health` checks liveness; `GET /ready` checks the database. Supabase manages user sign-in; the backend verifies incoming Bearer tokens; authenticated `/api/jobs` submissions return 202 and process through Cloud Tasks. Default `/classify` returns 410 after token verification so processing cannot bypass the queue. Direct CLI classification remains available.
+The API defaults to `http://127.0.0.1:8080`. `GET /health` checks liveness; `GET /ready` checks the database. Supabase manages user sign-in; the backend verifies incoming Bearer tokens; authenticated `/api/jobs` submissions return 202 and process through Cloud Tasks. The CLI runs the classification workflow directly for local testing.
 
-See [system design](docs/trx-system-design/README.md) for visual job and event flows and [deployment](docs/deployment/README.md) for provider setup. Acetate Web 0.1 uses the older direct classification interface and needs integration with this authenticated job API.
+See [system design](docs/trx-system-design/README.md) for visual job and event flows and [deployment](docs/deployment/README.md) for provider setup. Acetate Web 0.1 requires integration with this authenticated job API before it can submit classifications.
 
 ## Other commands
 

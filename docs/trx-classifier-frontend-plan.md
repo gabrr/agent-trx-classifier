@@ -1,6 +1,6 @@
 # TRX-classifier frontend plan
 
-> Historical plan for the disposable Acetate Web 0.1 test client. Its direct `/classify` integration does not match the current authenticated job API. Use the [API contract](trx-classifier-contract.md#http-api) for new integration. The interface notes below remain a design reference.
+> Proposed interface for Acetate Web 0.1. Its existing API integration needs replacement. The [API contract](trx-classifier-contract.md#http-api) defines implemented backend behavior; the interface details below are a design reference.
 
 Build a disposable visual test client based on the second design concept. Keep it separate from the agent in `apps/acetate-web-0.1/`.
 
@@ -8,7 +8,7 @@ Build a disposable visual test client based on the second design concept. Keep i
 
 - Plain HTML, CSS, and JavaScript; no framework or build step.
 - [Pico CSS](https://picocss.com/) for ready-made styling of buttons, file inputs, tables, and other native HTML elements.
-- [fetch-event-source](https://github.com/Azure/fetch-event-source) for multipart POST requests with SSE responses; use its existing parser.
+- Separate multipart job submission from authenticated GET event streaming.
 - Acetate's approved logo and a ready-made Phosphor PDF icon.
 - Use the existing frontend and its locally installed UI libraries on port 3101.
 
@@ -47,14 +47,15 @@ apps/
 
 ## API boundary
 
-- Send one PDF as multipart field `file` to configurable `POST /classify`; consume `text/event-stream`.
+- Submit one PDF as multipart field `file` to `POST /api/jobs`, with a Bearer token and `Idempotency-Key`. Use the returned job ID for status, events and results.
+- Stream progress from `GET /api/jobs/{id}/events`; retrieve the completed result from `GET /api/jobs/{id}/result`.
 - Use the shared event contract: `step_started`, `step_completed`, `result`, and `error`.
 - Step events need a stable step ID and readable name. Completed steps include their actual output and output type (`json`, `text`, or `markdown`).
 - The final result includes transactions with `report_bucket` and `classification_confidence`.
 - Keep API communication and event normalization separate from DOM updates within `app.js`.
 - Allow one active run; disable Send while processing. Show validation, HTTP, stream, and workflow errors visibly.
-- Disable automatic POST retries and visibility-triggered reconnection to avoid starting duplicate runs. A premature stream closure is an error; retain outputs already received.
-- Use the existing same-origin `/api/classify` proxy to the agent on port 8000. Render outputs as text, never executable HTML.
+- Reuse the submission idempotency key when retrying the same upload. Reconnect event streams using `Last-Event-ID`; retain outputs already received.
+- Forward authenticated requests to the backend job API through the frontend server. Render outputs as text, never executable HTML.
 
 ## Acceptance checks
 
@@ -63,4 +64,4 @@ apps/
 - After completion, see every returned transaction, with the least confident first.
 - Check failure handling, long output scrolling, and the narrow-screen layout.
 
-Implementation uses Acetate Web 0.1; fixtures are copied into the agent. The core API and LangSmith evaluation are implemented.
+Use the [usage guide](trx-classifier-usage.md) for CLI testing and LangSmith evaluation.

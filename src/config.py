@@ -24,6 +24,11 @@ def load_environment() -> None:
 
 
 @dataclass(frozen=True)
+class ApiConfig:
+    enable_docs: bool = False
+
+
+@dataclass(frozen=True)
 class DatabaseConfig:
     runtime_url: str | None
 

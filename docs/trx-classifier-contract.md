@@ -29,7 +29,7 @@ User routes require `Authorization: Bearer <Supabase access token>`. Submission/
 | `GET /health` | Process liveness. |
 | `GET /ready` | Bounded database connectivity check. |
 
-Unknown or cross-owner job reads return 404. Missing/invalid/expired tokens return 401; unavailable authentication configuration returns 503. `/classify` returns 410 after token verification in the default app; direct classification uses the CLI. The current API has no job listing, multi-file submission, file-download or user cancellation route.
+Unknown or cross-owner job reads return 404. Missing/invalid/expired tokens return 401; unavailable authentication configuration returns 503. HTTP classification uses `/api/jobs`; local workflow testing uses the CLI. The current API has no job listing, multi-file submission, file-download or user cancellation route.
 
 Processing returns 204 for terminal outcomes, 409 for an active duplicate and 503 for a retryable processing failure. Google caller verification occurs before processing. [Job recovery](trx-system-design/01-architecture-and-services.md#recovery) explains attempt/deadline limits and checkpoints.
 

@@ -625,18 +625,6 @@ def test_timeout_fences_late_synchronous_provider(service, monkeypatch):
         assert all(event.event_type != "result" for event in recorded)
 
 
-def test_default_classify_cannot_bypass_queue():
-    app = create_app(db_sessions=object())
-    app.dependency_overrides[current_user] = lambda: SimpleNamespace(user_id=uuid4())
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/classify", files={"file": ("synthetic.pdf", b"%PDF-synthetic")}
-        )
-
-        assert response.status_code == 410
-
-
 @pytest.mark.parametrize(
     "timeout,attempts,deadline",
     [(1800, 5, 7200), (0, 5, 7200), (1700, 0, 7200), (1700, 5, 0)],

@@ -70,7 +70,7 @@ uv run trx-api
 
 Binds to `0.0.0.0:$PORT`, default port 8080. `/health` is liveness and `/ready` checks PostgreSQL. Verified Supabase Bearer tokens protect user routes. POST `/api/jobs` accepts multipart `file` plus `Idempotency-Key` and Authorization headers, returning 202. Owner-checked status/result/event routes expose persisted outcomes; Cloud Tasks invokes the independently authenticated internal processing route.
 
-The default HTTP `/classify` path is disabled (410 after token verification). Direct CLI classification remains available. Acetate Web 0.1 uses the older direct classification interface. For the authenticated job API, use the [API contract](trx-classifier-contract.md#http-api) and [deployment guide](deployment/README.md).
+The CLI runs the workflow directly without the HTTP API or queued job infrastructure. To test authentication, uploads, dispatch and persisted results, submit through `/api/jobs`. Acetate Web 0.1 requires integration with that API. For the authenticated job API, use the [API contract](trx-classifier-contract.md#http-api) and [deployment guide](deployment/README.md).
 
 ## Dataset synchronization
 

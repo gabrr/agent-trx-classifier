@@ -62,6 +62,8 @@ See [job recovery](../trx-system-design/01-architecture-and-services.md#recovery
 
 ## Verify
 
+Confirm `/docs`, `/redoc`, and `/openapi.json` return 404 without authentication. See the [security guide](../trx-system-design/03-security-and-identity.md) for route access rules.
+
 Upload two PDFs and confirm both can progress while SSE remains responsive.
 Reject unauthenticated internal requests. Reconnect SSE and replay saved events;
 streams must reconnect before/after the Run timeout. Keep zero minimum instances

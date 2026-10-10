@@ -1,31 +1,19 @@
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Annotated
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
-from langgraph.graph.state import CompiledStateGraph
+from fastapi import FastAPI, HTTPException
 
-from config import AgentConfig, database_config
-from workflows.trx_classifier.event_stream import workflow_events
-from tools.statement_file import StatementFileInput
-
-from .dependencies import current_user
-from .streaming import stream_events
+from config import ApiConfig, database_config
 
 
 def create_app(
-    workflow: CompiledStateGraph | None = None,
     *,
     auth_service=None,
     job_service=None,
     internal_auth_provider=None,
     db_sessions=None,
     job_listener=None,
-    allow_direct_classify=False,
 ) -> FastAPI:
-    config = AgentConfig()
-
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         from db.engine import create_database_engine
@@ -33,9 +21,6 @@ def create_app(
         from db.session import session_factory
 
         settings = database_config() if db_sessions is None else None
-
-        app.state.workflow = workflow
-        app.state.run_lock = asyncio.Lock()
 
         app.state.auth_service = auth_service
         app.state.job_service = job_service
@@ -75,7 +60,15 @@ def create_app(
             if app.state.db_engine:
                 await asyncio.to_thread(app.state.db_engine.dispose)
 
-    app = FastAPI(title="TRX Classifier", lifespan=lifespan)
+    api_settings = ApiConfig()
+
+    app = FastAPI(
+        title="TRX Classifier",
+        lifespan=lifespan,
+        docs_url="/docs" if api_settings.enable_docs else None,
+        redoc_url="/redoc" if api_settings.enable_docs else None,
+        openapi_url="/openapi.json" if api_settings.enable_docs else None,
+    )
 
     from .authentication import router as authentication_router
     from .internal import router as internal_router
@@ -111,66 +104,5 @@ def create_app(
             ) from None
 
         return {"status": "ready"}
-
-    @app.post("/classify", dependencies=[Depends(current_user)])
-    async def classify(file: Annotated[UploadFile, File()]):
-        if not allow_direct_classify:
-            await file.close()
-
-            raise HTTPException(410, "Submit processing through /api/jobs")
-
-        try:
-            document = await file.read(config.max_file_bytes + 1)
-
-        finally:
-            await file.close()
-
-        filename = file.filename or "statement.pdf"
-
-        try:
-            statement_file = StatementFileInput.from_bytes(
-                document, filename=filename, config=config
-            )
-
-        except ValueError as error:
-            raise HTTPException(status_code=422, detail=str(error)) from error
-
-        if app.state.run_lock.locked():
-            raise HTTPException(
-                status_code=409, detail="A classification is already running."
-            )
-
-        await app.state.run_lock.acquire()
-
-        async def response_stream():
-            try:
-                if app.state.workflow is None:
-                    from workflows.trx_classifier.workflow import build_workflow
-
-                    app.state.workflow = await asyncio.to_thread(build_workflow)
-
-                parts = app.state.workflow.astream(
-                    {"file": statement_file},
-                    config={"run_name": "trx_classifier"},
-                    stream_mode=["custom", "updates"],
-                    version="v2",
-                )
-
-                events = workflow_events(parts)
-
-                async for chunk in stream_events(events):
-                    yield chunk
-
-            finally:
-                app.state.run_lock.release()
-
-        return StreamingResponse(
-            response_stream(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache, no-transform",
-                "X-Accel-Buffering": "no",
-            },
-        )
 
     return app

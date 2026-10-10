@@ -4,12 +4,9 @@ from itertools import count
 from types import SimpleNamespace
 
 import pytest
-from fastapi.testclient import TestClient
 
-from api.app import create_app
-from api.dependencies import current_user
-from workflows.trx_classifier.event_stream import workflow_events
 from tools.statement_file import StatementFileInput
+from workflows.trx_classifier.event_stream import workflow_events
 from workflows.trx_classifier.models import NormalizedStatement
 from workflows.trx_classifier.workflow import build_workflow
 
@@ -17,7 +14,7 @@ from workflows.trx_classifier.workflow import build_workflow
 @pytest.fixture
 def workflow(monkeypatch):
     module = importlib.import_module("workflows.trx_classifier.workflow")
-    events = importlib.import_module("tools.event_stream")
+    events = importlib.import_module("workflows.trx_classifier.event_stream")
     clock = count()
     monkeypatch.setattr(events, "perf_counter", lambda: float(next(clock)))
     monkeypatch.setattr(module, "load_environment", lambda: None)
@@ -148,56 +145,6 @@ def test_missing_result_and_stream_cleanup():
     assert closed == [True]
 
 
-def test_api_preserves_sse_contract(workflow, monkeypatch):
-    import api.app as app_module
-
-    monkeypatch.setattr(
-        app_module,
-        "database_config",
-        lambda: SimpleNamespace(runtime_url=None),
-    )
-    app = create_app(workflow=workflow, allow_direct_classify=True)
-
-    app.dependency_overrides[current_user] = lambda: SimpleNamespace(
-        user_id="synthetic"
-    )
-    with TestClient(app) as client:
-        response = client.post(
-            "/classify", files={"file": ("bad.pdf", b"not a PDF", "application/pdf")}
-        )
-
-        assert response.status_code == 422
-        response = client.post(
-            "/classify",
-            files={"file": ("statement.csv", b"Coffee,12.00", "text/csv")},
-        )
-
-        assert response.status_code == 200
-        assert response.text.count("event: step_started\n") == 4
-        assert response.text.count("event: result\n") == 1
-        assert '"elapsed_seconds": 3.0' in response.text
-        assert "event: error\n" not in response.text
-
-
-def test_stream_failure_is_an_error_event():
-    from api.streaming import stream_events
-
-    async def parts():
-        yield {"type": "custom", "data": {"event": "step_started", "data": {}}}
-        raise ValueError("Provider failed")
-
-    async def consume():
-        return "".join(
-            [chunk async for chunk in stream_events(workflow_events(parts()))]
-        )
-
-    output = asyncio.run(consume())
-
-    assert "event: error\n" in output
-    assert "Provider failed" in output
-    assert "event: result\n" not in output
-
-
 def test_closing_event_stream_closes_graph_stream():
     closed = []
 
@@ -250,38 +197,3 @@ def test_cli_executes_graph_directly(
 
     assert result["metrics"]["elapsed_seconds"] == 3
     assert result["transactions"][0]["amount"] == "12.00"
-
-
-def test_api_builds_graph_lazily_and_reuses_it(workflow, monkeypatch):
-    import api.app as app_module
-    import workflows.trx_classifier.workflow as workflow_module
-
-    builds = []
-
-    def build():
-        builds.append(True)
-        return workflow
-
-    monkeypatch.setattr(workflow_module, "build_workflow", build)
-    monkeypatch.setattr(
-        app_module,
-        "database_config",
-        lambda: SimpleNamespace(runtime_url=None),
-    )
-
-    app = create_app(allow_direct_classify=True)
-
-    app.dependency_overrides[current_user] = lambda: SimpleNamespace(
-        user_id="synthetic"
-    )
-    with TestClient(app) as client:
-        assert client.get("/health").status_code == 200
-        assert builds == []
-        for _ in range(2):
-            response = client.post(
-                "/classify",
-                files={"file": ("statement.csv", b"Coffee,12.00", "text/csv")},
-            )
-            assert response.text.count("event: result\n") == 1
-
-    assert builds == [True]
